@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey;
                                    parentColumns = "trackId",
                                    childColumns = "trackId",
                                    onDelete = ForeignKey.CASCADE), // If a TagStatus is deleted, its samples are also deleted
-        indices = {@Index(value = {"trackId", "entryTimeMs"})}
+        indices = {@Index(value = {"trackId", "timestampMs"})}
 )
 public class TagData {
 
@@ -19,12 +19,12 @@ public class TagData {
 
     public int trackId; // Foreign key to TagStatus.trackId
 
-    public long entryTimeMs; // Timestamp of the sample
+    public long timestampMs; // Timestamp of the sample
     public int rssi;         // RSSI value of the sample
 
-    public TagData(int trackId, long entryTimeMs, int rssi) {
+    public TagData(int trackId, long timestampMs, int rssi) {
         this.trackId = trackId;
-        this.entryTimeMs = entryTimeMs;
+        this.timestampMs = timestampMs;
         this.rssi = rssi;
     }
 }

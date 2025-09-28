@@ -95,7 +95,7 @@ public class TagProcessor {
                     }
                 }
                 if (peakSample != null) {
-                    statusToProcess.peakTimeMs = peakSample.entryTimeMs;
+                    statusToProcess.peakTimeMs = peakSample.timestampMs;
                     Log.d(TAG, "processTagExit: Set peakTimeMs for trackId " + statusToProcess.trackId + 
                                " to " + statusToProcess.peakTimeMs + " (RSSI: " + maxRssi + ")");
                 } else {

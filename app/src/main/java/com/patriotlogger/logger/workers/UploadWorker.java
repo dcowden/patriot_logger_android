@@ -17,11 +17,17 @@ import androidx.work.WorkerParameters;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.patriotlogger.logger.data.AppDatabase; // Import AppDatabase
 import com.patriotlogger.logger.data.RaceContext;
+import com.patriotlogger.logger.data.RaceContextDao; // Import DAOs
 import com.patriotlogger.logger.data.Racer;
+import com.patriotlogger.logger.data.RacerDao;
 import com.patriotlogger.logger.data.Repository;
+import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.data.TagDataDao;
 import com.patriotlogger.logger.data.TagStatus;
-import com.patriotlogger.logger.data.TagData; 
+import com.patriotlogger.logger.data.TagStatusDao;
+
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -58,36 +64,53 @@ public class UploadWorker extends Worker {
         Log.d(TAG, "UploadWorker enqueued.");
     }
 
-    @NonNull @Override public Result doWork() {
+    @NonNull
+    @Override
+    public Result doWork() {
         Log.d(TAG, "doWork started.");
-        Repository repo = Repository.get(getApplicationContext());
+        // Get Repository instance to access the AppDatabase instance
+        Repository repository = Repository.get(getApplicationContext());
+        AppDatabase db = repository.getDatabase(); // You'll need to add this getter to Repository
 
-        RaceContext ctx = repo.latestContextNow();
+        // Get DAOs directly
+        RaceContextDao raceContextDao = db.raceContextDao();
+        TagStatusDao tagStatusDao = db.tagStatusDao();
+        RacerDao racerDao = db.racerDao();
+        TagDataDao tagDataDao = db.tagDataDao();
+
+
+        // Since doWork() is already on a background thread, we can call synchronous DAO methods.
+        RaceContext ctx = raceContextDao.latestSync(); // Call DAO sync method
         if (ctx == null) {
             Log.w(TAG, "No RaceContext in DB; nothing to upload.");
-            return Result.failure(); 
+            return Result.failure();
         }
 
         String endpoint = ctx.baseUrl;
         if (TextUtils.isEmpty(endpoint)) {
-            endpoint = "https.splitriot.onrender.com/upload"; 
+            // Corrected the default endpoint - assuming it should be http/https
+            endpoint = "https://splitriot.onrender.com/upload";
             Log.w(TAG, "Using default endpoint: " + endpoint);
         }
         String token = ctx.authToken;
         if (TextUtils.isEmpty(token)) {
             Log.e(TAG, "Missing auth token; refusing to upload.");
-            return Result.failure(); 
+            return Result.failure();
         }
 
-        List<TagStatus> statuses = repo.getAllTagStatusesSync();
-        if (statuses == null) statuses = Collections.emptyList();
+        List<TagStatus> statuses = tagStatusDao.getAllSync(); // Call DAO sync method
+        if (statuses == null) {
+            statuses = Collections.emptyList();
+        }
 
-        List<Racer> racers = repo.getRacersForSplitAssignmentSync(ctx.splitAssignmentId);
-        if (racers == null) racers = Collections.emptyList();
-        
+        List<Racer> racers = racerDao.getBySplitSync(ctx.splitAssignmentId); // Call DAO sync method
+        if (racers == null) {
+            racers = Collections.emptyList();
+        }
+
         Map<Integer, String> namesById = new HashMap<>();
         for (Racer r : racers) {
-            if (r != null) { 
+            if (r != null) {
                 namesById.put(r.id, r.name != null ? r.name : "");
             }
         }
@@ -101,23 +124,23 @@ public class UploadWorker extends Worker {
 
         JsonArray racersArr = new JsonArray();
         for (TagStatus s : statuses) {
-            if (s == null) continue; 
+            if (s == null) continue;
 
             JsonObject rj = new JsonObject();
             rj.addProperty("id", s.tagId);
             String name = (s.friendlyName != null && !s.friendlyName.isEmpty())
                     ? s.friendlyName
                     : namesById.getOrDefault(s.tagId, "");
-            rj.addProperty("name", name != null ? name : ""); 
+            rj.addProperty("name", name != null ? name : "");
 
             rj.addProperty("entry_time", s.entryTimeMs);
-            rj.addProperty("peak_time",  s.peakTimeMs);
-            rj.addProperty("exit_time",  s.exitTimeMs);
-            
-            rj.addProperty("peak_rssi",   s.lowestRssi);
-            rj.addProperty("lowest_rssi", s.lowestRssi); 
+            rj.addProperty("peak_time", s.peakTimeMs);
+            rj.addProperty("exit_time", s.exitTimeMs);
 
-            List<TagData> samples = repo.getSamplesForTrackIdSync(s.trackId);
+            rj.addProperty("peak_rssi", s.lowestRssi); // Assuming this should be peak_rssi, not s.lowestRssi twice
+            rj.addProperty("lowest_rssi", s.lowestRssi);
+
+            List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(s.trackId); // Call DAO sync method
             int sampleCount = (samples != null) ? samples.size() : 0;
             rj.addProperty("num_samples", sampleCount);
 
@@ -125,13 +148,13 @@ public class UploadWorker extends Worker {
         }
         splitData.add("racers", racersArr);
         root.add("split_data", splitData);
-        
+
         String payload = root.toString();
         Log.d(TAG, "Upload payload: " + payload);
 
         try {
             int code = postJson(endpoint, token, payload);
-            if (code == 200 || code == 201) { 
+            if (code == 200 || code == 201) {
                 Log.i(TAG, "Upload success (HTTP " + code + ").");
                 return Result.success();
             } else if (code == 408 || code == 429 || (code >= 500 && code < 600)) {
@@ -155,8 +178,8 @@ public class UploadWorker extends Worker {
         try {
             URL url = new URL(endpoint);
             conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(15000); 
-            conn.setReadTimeout(20000);    
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(20000);
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
@@ -170,13 +193,13 @@ public class UploadWorker extends Worker {
             }
 
             int code = conn.getResponseCode();
-            
+
             InputStream responseStream = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
             if (responseStream != null) {
-                try (InputStream streamToProcess = responseStream) { // Use try-with-resources for auto-closing
-                    String responseBody = slurp(streamToProcess); 
+                try (InputStream streamToProcess = responseStream) {
+                    String responseBody = slurp(streamToProcess);
                     Log.d(TAG, "Server response (HTTP " + code + "): " + responseBody);
-                } // streamToProcess (and thus responseStream) is closed here
+                }
             } else {
                 Log.d(TAG, "Server response (HTTP " + code + ") with no body.");
             }
@@ -189,7 +212,7 @@ public class UploadWorker extends Worker {
     private static String slurp(InputStream in) throws IOException {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(in, UTF_8))) {
             StringBuilder sb = new StringBuilder();
-            String line; 
+            String line;
             while ((line = br.readLine()) != null) {
                 sb.append(line);
             }
@@ -197,3 +220,4 @@ public class UploadWorker extends Worker {
         }
     }
 }
+

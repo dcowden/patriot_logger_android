@@ -19,61 +19,111 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.Looper; // For posting to main thread if LiveData observeForever is used directly
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import androidx.lifecycle.LiveData; // For observing settings
+import androidx.lifecycle.Observer;   // For observing settings
 
 import com.patriotlogger.logger.R;
+import com.patriotlogger.logger.data.AppDatabase;
 import com.patriotlogger.logger.data.RaceContext;
+import com.patriotlogger.logger.data.RaceContextDao;
 import com.patriotlogger.logger.data.Racer;
+import com.patriotlogger.logger.data.RacerDao;
 import com.patriotlogger.logger.data.Repository;
-import com.patriotlogger.logger.data.TagStatus;
+import com.patriotlogger.logger.data.Setting; // Import Setting
 import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.data.TagDataDao;
+import com.patriotlogger.logger.data.TagStatus;
+import com.patriotlogger.logger.data.TagStatusDao;
 import com.patriotlogger.logger.logic.TagProcessor;
-import com.patriotlogger.logger.utils.SettingsManager;
+// SettingsManager is removed
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects; 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class BleScannerService extends Service {
     private static final String TAG_SERVICE = "BleScannerService";
 
     public static final String ACTION_START = "com.patriotlogger.logger.START_SCAN";
-    public static final String ACTION_STOP  = "com.patriotlogger.logger.STOP_SCAN";
+    public static final String ACTION_STOP = "com.patriotlogger.logger.STOP_SCAN";
 
     private static final String CHANNEL_ID = "scan_channel";
     private static final int NOTIF_ID = 1001;
 
-    private static final long LOSS_TIMEOUT_MS_CONFIG = 1000L; 
-    private static final long REPORT_DELAY_MS = 20L; 
+    private static final long LOSS_TIMEOUT_MS_CONFIG = 1000L;
+    private static final long REPORT_DELAY_MS = 20L;
 
     private HandlerThread workerThread;
     private Handler worker;
 
     private BluetoothLeScanner scanner;
     private Repository repository;
+    private AppDatabase db;
+    private TagStatusDao tagStatusDao;
+    private RacerDao racerDao;
+    private TagDataDao tagDataDao;
+    private RaceContextDao raceContextDao;
+
     private TagProcessor tagProcessor;
-    private SettingsManager settingsManager;
+
+    // To hold current settings values, fetched from Repository
+    private volatile int currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD; // Default
+    private volatile boolean currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;   // Default
 
     private final Map<Integer, TagStatus.TagStatusState> lastNotifiedStateForTrack = new ConcurrentHashMap<>();
+    private Observer<Setting> settingsObserver; // To remove observer later
+
 
     @Override
     public void onCreate() {
         super.onCreate();
         repository = Repository.get(getApplicationContext());
-        settingsManager = SettingsManager.getInstance(getApplicationContext());
+        db = repository.getDatabase();
+
+        tagStatusDao = db.tagStatusDao();
+        racerDao = db.racerDao();
+        tagDataDao = db.tagDataDao();
+        raceContextDao = db.raceContextDao();
+
         tagProcessor = new TagProcessor();
 
         workerThread = new HandlerThread("ble-data-processor");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+
+        // Fetch initial settings and observe for changes
+        // Settings are needed on the worker thread, but LiveData observation needs a Looper.
+        // We can observeForever and post updates to our volatile fields.
+        settingsObserver = setting -> {
+            if (setting != null) {
+                Log.i(TAG_SERVICE, "Settings updated: Threshold=" + setting.arrived_threshold + ", Retain=" + setting.retain_samples);
+                currentArrivedThreshold = setting.arrived_threshold;
+                currentRetainSamples = setting.retain_samples;
+            } else {
+                // This might happen if DB is cleared and defaults haven't repopulated LiveData yet.
+                // Fallback to defaults. Repository's getLiveConfig should handle initialization.
+                Log.w(TAG_SERVICE, "Received null settings from LiveData, using defaults.");
+                currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD;
+                currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;
+            }
+        };
+        // LiveData needs to be observed from a thread with a Looper.
+        // The service's main thread is fine for observeForever.
+        new Handler(Looper.getMainLooper()).post(() ->
+                repository.getLiveConfig().observeForever(settingsObserver)
+        );
+
 
         createChannel();
         startForeground(NOTIF_ID, buildNotif("Scanner Initializing..."));
@@ -87,7 +137,7 @@ public class BleScannerService extends Service {
         if (ACTION_STOP.equals(action)) {
             notifyLine("Scanner Stopping...");
             Log.i(TAG_SERVICE, "Received stop command");
-            stopSelf(); 
+            stopSelf();
             return START_NOT_STICKY;
         }
         notifyLine("Scanner Starting...");
@@ -100,15 +150,25 @@ public class BleScannerService extends Service {
     public void onDestroy() {
         super.onDestroy();
         stopScan();
+        if (settingsObserver != null) {
+            // Remove observer from the same thread it was added
+            new Handler(Looper.getMainLooper()).post(() ->
+                    repository.getLiveConfig().removeObserver(settingsObserver)
+            );
+        }
         if (workerThread != null) {
-            worker.removeCallbacksAndMessages(null); 
+            worker.removeCallbacksAndMessages(null);
             workerThread.quitSafely();
         }
         lastNotifiedStateForTrack.clear();
         Log.i(TAG_SERVICE, "Service Destroyed");
     }
 
-    @Nullable @Override public IBinder onBind(Intent intent) { return null; }
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
 
     private void startScan() {
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
@@ -116,43 +176,54 @@ public class BleScannerService extends Service {
         if (adapter == null || !adapter.isEnabled()) {
             Log.w(TAG_SERVICE, "Bluetooth disabled or not available");
             notifyLine("Bluetooth disabled. Scan failed.");
-            stopSelf(); return;
+            stopSelf();
+            return;
         }
         scanner = adapter.getBluetoothLeScanner();
         if (scanner == null) {
             Log.w(TAG_SERVICE, "No BLE scanner available");
             notifyLine("BLE Scanner not available. Scan failed.");
-            stopSelf(); return;
+            stopSelf();
+            return;
         }
 
-        ScanSettings settings = new ScanSettings.Builder()
+        ScanSettings scanSettings = new ScanSettings.Builder() // Renamed variable
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                 .setReportDelay(REPORT_DELAY_MS)
                 .build();
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG_SERVICE, "Missing BLUETOOTH_SCAN permission for startScan");
-            notifyLine("Permission missing. Scan failed.");
-            stopSelf(); return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG_SERVICE, "Missing BLUETOOTH_SCAN permission for startScan");
+                notifyLine("Permission missing. Scan failed.");
+                stopSelf();
+                return;
+            }
         }
-        scanner.startScan(null, settings, scanCallback);
+        scanner.startScan(null, scanSettings, scanCallback);
         notifyLine("Scanning for Runners...");
         Log.i(TAG_SERVICE, "Scan effectively started");
     }
 
     private void stopScan() {
         if (scanner != null) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG_SERVICE, "Missing BLUETOOTH_SCAN permission for stopScan");
-                return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                    Log.w(TAG_SERVICE, "Missing BLUETOOTH_SCAN permission for stopScan. Cannot stop scan.");
+                    // Cannot call stopScan without permission on Android S+
+                    // Consider how to handle this - perhaps the service shouldn't have started.
+                    return; // Or try to stop anyway and catch SecurityException, though API docs say permission is required.
+                }
             }
             try {
                 scanner.stopScan(scanCallback);
                 Log.i(TAG_SERVICE, "Scan stopped via API");
                 notifyLine("Scanning Paused");
+            } catch (SecurityException se) {
+                Log.e(TAG_SERVICE, "SecurityException stopping scan: " + se.getMessage(), se);
             } catch (Exception e) {
-                Log.e(TAG_SERVICE, "Error stopping scan: " + e.getMessage());
+                Log.e(TAG_SERVICE, "Error stopping scan: " + e.getMessage(), e);
             }
             scanner = null;
         }
@@ -160,11 +231,17 @@ public class BleScannerService extends Service {
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
-        public void onScanResult(int callbackType, ScanResult result) { handleScanResult(result); }
-        @Override
-        public void onBatchScanResults(List<ScanResult> results) { 
-            for (ScanResult r : results) handleScanResult(r); 
+        public void onScanResult(int callbackType, ScanResult result) {
+            handleScanResult(result);
         }
+
+        @Override
+        public void onBatchScanResults(List<ScanResult> results) {
+            for (ScanResult r : results) {
+                handleScanResult(r);
+            }
+        }
+
         @Override
         public void onScanFailed(int errorCode) {
             Log.e(TAG_SERVICE, "Scan failed with error code: " + errorCode);
@@ -194,60 +271,60 @@ public class BleScannerService extends Service {
         int rssi = result.getRssi();
         long now = System.currentTimeMillis();
 
-        worker.post(() -> processRawSample(tagId, rssi, now)); 
+        worker.post(() -> processRawSample(tagId, rssi, now));
     }
 
+    // This method runs on the 'worker' HandlerThread
     private void processRawSample(int tagId, int rssi, long nowMs) {
         TagStatus statusToProcess;
-        TagStatus currentKnownStatus = repository.getActiveTagStatusForTagIdNow(tagId);
-        Racer racer = repository.getRacerNow(tagId); // Fetch racer info for friendly name
+        TagStatus currentKnownStatus = tagStatusDao.getActiveStatusForTagIdSync(tagId);
+        Racer racer = racerDao.getSync(tagId);
         String friendlyName = (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
 
-        if (currentKnownStatus == null) { // This is a new pass for this tagId
+        if (currentKnownStatus == null) {
             statusToProcess = new TagStatus();
             statusToProcess.tagId = tagId;
             statusToProcess.entryTimeMs = nowMs;
             statusToProcess.state = TagStatus.TagStatusState.APPROACHING;
-            statusToProcess.lowestRssi = (float) rssi; // Initial RSSI is the lowest so far
+            statusToProcess.lowestRssi = (float) rssi;
             if (friendlyName != null) {
                 statusToProcess.friendlyName = friendlyName;
             }
             Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus.");
-        } else { // Existing pass for this tagId
+        } else {
             statusToProcess = currentKnownStatus;
-            // Update friendly name if it wasn't set before and is now available
-            if ((statusToProcess.friendlyName == null || statusToProcess.friendlyName.isEmpty()) && 
-                (friendlyName != null && !friendlyName.isEmpty())) {
+            if ((statusToProcess.friendlyName == null || statusToProcess.friendlyName.isEmpty()) &&
+                    (friendlyName != null && !friendlyName.isEmpty())) {
                 statusToProcess.friendlyName = friendlyName;
             }
         }
 
-        int arrivedThreshold = settingsManager.getArrivedThreshold();
+        // Use the cached settings values
+        int arrivedThreshold = this.currentArrivedThreshold;
 
         TagStatus processedStatus = tagProcessor.processSample(
-            statusToProcess, 
-            rssi,          
-            nowMs,         
-            arrivedThreshold
+                statusToProcess,
+                rssi,
+                nowMs,
+                arrivedThreshold
         );
-        
-        processedStatus.trackId = repository.upsertTagStatusSync(processedStatus);
 
-        handleProcessingSideEffects(processedStatus, nowMs, rssi); 
+        processedStatus.trackId = (int) tagStatusDao.upsertSync(processedStatus);
+        handleProcessingSideEffects(processedStatus, nowMs, rssi);
     }
 
+    // This method runs on the 'worker' HandlerThread
     private void handleProcessingSideEffects(@NonNull TagStatus processedStatus, long sampleTimestampMs, int sampleRssi) {
-        if (processedStatus.trackId != 0 && processedStatus.isInProcess()) { 
+        if (processedStatus.trackId != 0 && processedStatus.isInProcess()) {
             TagData newSample = new TagData(processedStatus.trackId, sampleTimestampMs, sampleRssi);
-            repository.insertTagData(newSample);
+            tagDataDao.insert(newSample);
         }
 
         TagStatus.TagStatusState lastNotified = lastNotifiedStateForTrack.get(processedStatus.trackId);
-        // Corrected comparison: Use .equals() for safe comparison with potentially null lastNotified
         if (processedStatus.trackId != 0 && !processedStatus.state.equals(lastNotified)) {
             String message = null;
             if (processedStatus.state == TagStatus.TagStatusState.APPROACHING) {
-                if (lastNotified == null) { // Only notify for first time APPROACHING
+                if (lastNotified == null) {
                     message = displayLabel(processedStatus) + " approaching...";
                 }
             } else if (processedStatus.state == TagStatus.TagStatusState.HERE) {
@@ -260,24 +337,27 @@ public class BleScannerService extends Service {
         }
     }
 
+    // This method runs on the 'worker' HandlerThread
     private void performSweepRunnable() {
         Log.d(TAG_SERVICE, "Performing loss sweep...");
         long now = System.currentTimeMillis();
-        
-        List<TagStatus> activeStatuses = repository.getAllTagStatusesSync();
+
+        List<TagStatus> activeStatuses = tagStatusDao.getAllSync();
         if (activeStatuses == null) activeStatuses = new ArrayList<>();
 
-        RaceContext raceContext = repository.latestContextNow(); 
+        RaceContext raceContext = raceContextDao.latestSync();
         long gunTimeMs = (raceContext != null) ? raceContext.gunTimeMs : 0L;
-        boolean retainSamplesSetting = settingsManager.shouldRetainSamples();
+
+        // Use the cached settings values
+        boolean retainSamplesSetting = this.currentRetainSamples;
 
         for (TagStatus status : activeStatuses) {
             if (status.isInProcess()) {
-                List<TagData> samples = repository.getSamplesForTrackIdSync(status.trackId);
+                List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(status.trackId);
                 TagStatus loggedStatus = tagProcessor.processTagExit(status, samples, now, LOSS_TIMEOUT_MS_CONFIG);
 
-                if (loggedStatus != null) { 
-                    repository.upsertTagStatus(loggedStatus); 
+                if (loggedStatus != null) {
+                    tagStatusDao.upsert(loggedStatus);
                     lastNotifiedStateForTrack.remove(loggedStatus.trackId);
 
                     long splitMs = 0;
@@ -288,7 +368,7 @@ public class BleScannerService extends Service {
 
                     if (!retainSamplesSetting) {
                         Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + loggedStatus.trackId);
-                        repository.deleteSamplesForTrackId(loggedStatus.trackId);
+                        tagDataDao.deleteSamplesForTrackIdSync(loggedStatus.trackId);
                     }
                 }
             }
@@ -301,7 +381,7 @@ public class BleScannerService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null) {
             NotificationChannel ch = nm.getNotificationChannel(CHANNEL_ID);
             if (ch == null) {
-                 ch = new NotificationChannel(
+                ch = new NotificationChannel(
                         CHANNEL_ID, "Patriot Logger Scanning", NotificationManager.IMPORTANCE_LOW);
                 ch.setDescription("Notifications for BLE scanning activity");
                 nm.createNotificationChannel(ch);
@@ -330,14 +410,13 @@ public class BleScannerService extends Service {
         if (s == null) return "Unknown Tag";
         String name = (s.friendlyName != null && !s.friendlyName.isEmpty())
                 ? s.friendlyName : ("PT-" + s.tagId);
-        return name + " (#" + s.tagId + (s.trackId != 0 ? " Pass:" + s.trackId : "") + ")"; 
+        return name + " (#" + s.tagId + (s.trackId != 0 ? " Pass:" + s.trackId : "") + ")";
     }
 
     private String formatMmSs(long ms) {
         if (ms <= 0) return "--:--.--";
-        long totalMillis = ms;
-        long seconds = (totalMillis / 1000) % 60;
-        long minutes = (totalMillis / (1000 * 60)) % 60;
+        long seconds = (ms / 1000) % 60;
+        long minutes = (ms / (1000 * 60)) % 60;
         return String.format(Locale.US, "%d:%02d", minutes, seconds);
     }
 }

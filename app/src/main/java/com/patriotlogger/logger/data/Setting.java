@@ -14,6 +14,9 @@ public class Setting {
     public Boolean retain_samples = true; 
     public Integer arrived_threshold = -60;
 
+    public static final boolean DEFAULT_RETAIN_SAMPLES = false;
+    public static final int DEFAULT_ARRIVED_THRESHOLD = -70; // Example default RSSI
+
     public Setting() {}
 
 }

@@ -2,6 +2,9 @@ package com.patriotlogger.logger.ui;
 
 import android.app.TimePickerDialog;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log; // For logging
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -9,26 +12,30 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TimePicker;
+import android.widget.Toast; // For showing errors/success
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.ViewModelProvider;
+// import androidx.lifecycle.ViewModelProvider; // Not directly used for a ViewModel in this fragment
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.patriotlogger.logger.R;
 import com.patriotlogger.logger.data.RaceContext;
 import com.patriotlogger.logger.data.Repository;
+import com.patriotlogger.logger.data.RepositoryVoidCallback; // Import callback
 
 import java.util.Calendar;
 
 public class LogFragment extends Fragment {
+    private static final String TAG_FRAGMENT = "LogFragment"; // Tag for logging
 
     private RecyclerView recyclerView;
     private RunnerAdapter runnerAdapter;
     private Repository repository;
+    private RaceContext currentObservedRaceContext; // To hold the latest observed context for dialogs
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -52,13 +59,16 @@ public class LogFragment extends Fragment {
         runnerAdapter = new RunnerAdapter(requireContext());
         recyclerView.setAdapter(runnerAdapter);
 
-        repository.liveTagStatuses().observe(getViewLifecycleOwner(), statuses -> {
+        // Use the new LiveData method from Repository
+        repository.getAllTagStatuses().observe(getViewLifecycleOwner(), statuses -> {
             if (statuses != null) {
                 runnerAdapter.submitList(statuses);
             }
         });
 
-        repository.liveContext().observe(getViewLifecycleOwner(), raceContext -> {
+        // Use the new LiveData method from Repository
+        repository.getLiveRaceContext().observe(getViewLifecycleOwner(), raceContext -> {
+            currentObservedRaceContext = raceContext; // Cache for dialogs
             if (raceContext != null && raceContext.gunTimeMs > 0) {
                 runnerAdapter.setGunTime(raceContext.gunTimeMs);
             } else {
@@ -91,8 +101,24 @@ public class LogFragment extends Fragment {
                 .setTitle("Clear Log")
                 .setMessage("Are you sure you want to clear all log entries and reset gun time?")
                 .setPositiveButton("Clear", (dialog, which) -> {
-                    repository.clearAll(); 
-                    runnerAdapter.setGunTime(0L); 
+                    repository.clearAllData(new RepositoryVoidCallback() {
+                        @Override
+                        public void onSuccess() {
+                            // UI updates should ideally be driven by LiveData reacting to the clear.
+                            // Forcing gunTime to 0 in adapter here is okay for immediate visual feedback.
+                            if (runnerAdapter != null) { // Check adapter for safety
+                                runnerAdapter.setGunTime(0L);
+                            }
+                            Toast.makeText(getContext(), "Log cleared.", Toast.LENGTH_SHORT).show();
+                            Log.i(TAG_FRAGMENT, "Data cleared successfully via menu.");
+                        }
+
+                        @Override
+                        public void onError(Exception e) {
+                            Toast.makeText(getContext(), "Error clearing log.", Toast.LENGTH_SHORT).show();
+                            Log.e(TAG_FRAGMENT, "Error clearing data: ", e);
+                        }
+                    });
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -100,25 +126,40 @@ public class LogFragment extends Fragment {
 
     private void showSetGunTimeDialog() {
         final Calendar c = Calendar.getInstance();
-        
-        RaceContext currentRaceContext = repository.latestContextNow();
-        if (currentRaceContext != null && currentRaceContext.gunTimeMs > 0) {
-            c.setTimeInMillis(currentRaceContext.gunTimeMs);
+
+        // Use the cached currentObservedRaceContext from the LiveData observer
+        if (currentObservedRaceContext != null && currentObservedRaceContext.gunTimeMs > 0) {
+            c.setTimeInMillis(currentObservedRaceContext.gunTimeMs);
         }
-        
+
         int hour = c.get(Calendar.HOUR_OF_DAY);
         int minute = c.get(Calendar.MINUTE);
 
         TimePickerDialog timePickerDialog = new TimePickerDialog(requireContext(),
-                (TimePicker view, int selectedHour, int selectedMinute) -> { // Explicitly typed the 'view' parameter
+                (timePickerView, selectedHour, selectedMinute) -> { // Explicitly typed parameter
                     Calendar selectedTime = Calendar.getInstance();
                     selectedTime.set(Calendar.HOUR_OF_DAY, selectedHour);
                     selectedTime.set(Calendar.MINUTE, selectedMinute);
-                    selectedTime.set(Calendar.SECOND, 0); 
+                    selectedTime.set(Calendar.SECOND, 0);
                     selectedTime.set(Calendar.MILLISECOND, 0);
-                    repository.setGunTime(selectedTime.getTimeInMillis()); 
-                }, hour, minute, true); 
+
+                    repository.setGunTime(selectedTime.getTimeInMillis(), new RepositoryVoidCallback() {
+                        @Override
+                        public void onSuccess() {
+                            // LiveData from getLiveRaceContext() should update the UI automatically.
+                            Toast.makeText(getContext(), "Gun time updated.", Toast.LENGTH_SHORT).show();
+                            Log.i(TAG_FRAGMENT, "Gun time updated successfully.");
+                        }
+
+                        @Override
+                        public void onError(Exception e) {
+                            Toast.makeText(getContext(), "Error setting gun time.", Toast.LENGTH_SHORT).show();
+                            Log.e(TAG_FRAGMENT, "Error setting gun time: ", e);
+                        }
+                    });
+                }, hour, minute, true); // true for 24-hour format
         timePickerDialog.setTitle("Set Gun Time");
         timePickerDialog.show();
     }
 }
+

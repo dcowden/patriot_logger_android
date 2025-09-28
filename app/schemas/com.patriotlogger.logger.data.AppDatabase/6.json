@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "db9b08beba00d7ea24a2c2bac3634ed0",
+    "identityHash": "2359213eb78e0e6becab54d21212f439",
     "entities": [
       {
         "tableName": "tag_status",
@@ -208,7 +208,7 @@
       },
       {
         "tableName": "tag_data",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dataId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` INTEGER NOT NULL, `entryTimeMs` INTEGER NOT NULL, `rssi` INTEGER NOT NULL, FOREIGN KEY(`trackId`) REFERENCES `tag_status`(`trackId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dataId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` INTEGER NOT NULL, `timestampMs` INTEGER NOT NULL, `rssi` INTEGER NOT NULL, FOREIGN KEY(`trackId`) REFERENCES `tag_status`(`trackId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "dataId",
@@ -223,8 +223,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "entryTimeMs",
-            "columnName": "entryTimeMs",
+            "fieldPath": "timestampMs",
+            "columnName": "timestampMs",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -243,14 +243,14 @@
         },
         "indices": [
           {
-            "name": "index_tag_data_trackId_entryTimeMs",
+            "name": "index_tag_data_trackId_timestampMs",
             "unique": false,
             "columnNames": [
               "trackId",
-              "entryTimeMs"
+              "timestampMs"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_tag_data_trackId_entryTimeMs` ON `${TABLE_NAME}` (`trackId`, `entryTimeMs`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tag_data_trackId_timestampMs` ON `${TABLE_NAME}` (`trackId`, `timestampMs`)"
           }
         ],
         "foreignKeys": [
@@ -270,7 +270,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'db9b08beba00d7ea24a2c2bac3634ed0')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2359213eb78e0e6becab54d21212f439')"
     ]
   }
 }

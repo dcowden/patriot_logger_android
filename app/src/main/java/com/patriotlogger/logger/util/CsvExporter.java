@@ -60,7 +60,7 @@ public class CsvExporter {
                 csvBuilder.append(status.exitTimeMs).append(",");
                 csvBuilder.append(String.format(Locale.US, "%.2f", status.lowestRssi)).append(",");
                 csvBuilder.append(splitTimeMs).append(",");
-                csvBuilder.append(sample.entryTimeMs).append(",");
+                csvBuilder.append(sample.timestampMs).append(",");
                 csvBuilder.append(sample.rssi).append("\n");
             }
         }
