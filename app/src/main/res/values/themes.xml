@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base app theme: Material 3, Day/Night, no action bar -->
+    <style name="Theme.PatriotLogger" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Your palette (M3 still honors these) -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorPrimaryContainer">@color/primary_dark</item>
+
+        <!-- Surfaces / background -->
+        <item name="android:windowBackground">@color/background_light</item>
+        <!-- Let M3 handle status/navigation colors; avoid forcing statusBarColor -->
+        <!-- <item name="android:statusBarColor">@color/primary_dark</item> -->
+
+        <!-- If you’re using a Toolbar, you don’t need a legacy ActionBar -->
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <!-- Optional variant; already no-action-bar via parent, but kept if you reference it -->
+    <style name="Theme.PatriotLogger.NoActionBar" parent="Theme.PatriotLogger">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <!-- ===== Replace AppCompat/Design widget parents with Material3 ===== -->
+
+    <!-- REMOVE: ActionBar styles (AppCompat). Use a Toolbar in your layout instead. -->
+    <!-- <style name="ActionBar.PatriotLogger" parent="Widget.AppCompat.ActionBar.Solid">...</style> -->
+    <!-- <style name="ActionBar.Title" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">...</style> -->
+
+    <!-- Buttons: use Material3 widget parents -->
+    <style name="Button.PatriotLogger" parent="Widget.Material3.Button">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="backgroundTint">@color/primary</item>
+    </style>
+
+    <!-- FloatingActionButton: Material3
+    <style name="FloatingActionButton.PatriotLogger" parent="Widget.Material3.FloatingActionButton">
+        <item name="backgroundTint">@color/green</item>
+        <item name="tint">@android:color/white</item>
+    </style> -->
+
+    <!-- Cards: Material3 MaterialCardView
+    <style name="CardView.PatriotLogger" parent="Widget.Material3.MaterialCardView">
+        <item name="cardCornerRadius">8dp</item>
+        <item name="cardElevation">2dp</item>
+        <item name="android:layout_margin">4dp</item>
+    </style>  -->
+
+    <!-- ===== Your text/icon styles (kept as-is) ===== -->
+
+    <style name="TextPrimary">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="TextSecondary">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="TextHint">
+        <item name="android:textColor">@color/text_hint</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TextClock">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">56sp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextHeaderEvent">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextHeaderRace">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TextHeaderSplit">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="TextRunnerName">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextRunnerInfo">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TextRunnerStatus">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextSectionTitle">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Divider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:background">@color/divider</item>
+    </style>
+
+    <style name="Theme.PatriotLogger.Debug" parent="Theme.PatriotLogger">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="IconStatus">
+        <item name="android:layout_width">24dp</item>
+        <item name="android:layout_height">24dp</item>
+    </style>
+
+    <style name="IconStatusApproaching" parent="IconStatus">
+        <item name="tint">@color/status_approaching</item>
+    </style>
+
+    <style name="IconStatusHere" parent="IconStatus">
+        <item name="tint">@color/status_here</item>
+    </style>
+
+    <style name="IconStatusLogged" parent="IconStatus">
+        <item name="tint">@color/status_logged</item>
+    </style>
+
+</resources>

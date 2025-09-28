@@ -1,0 +1,179 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "84174106cdee104e30630a01be45a9ea",
+    "entities": [
+      {
+        "tableName": "TagStatus",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `estimatedRssi` REAL NOT NULL, `peakRssi` REAL NOT NULL, `lowestRssi` REAL NOT NULL, `sampleCount` INTEGER NOT NULL, `state` TEXT, PRIMARY KEY(`tagId`))",
+        "fields": [
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "friendlyName",
+            "columnName": "friendlyName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "entryTimeMs",
+            "columnName": "entryTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakTimeMs",
+            "columnName": "peakTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitTimeMs",
+            "columnName": "exitTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatedRssi",
+            "columnName": "estimatedRssi",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakRssi",
+            "columnName": "peakRssi",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lowestRssi",
+            "columnName": "lowestRssi",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tagId"
+          ]
+        }
+      },
+      {
+        "tableName": "Racer",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `name` TEXT, `splitAssignmentId` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "splitAssignmentId",
+            "columnName": "splitAssignmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "RaceContext",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventName` TEXT, `raceName` TEXT, `raceId` INTEGER NOT NULL, `gunTimeMs` INTEGER NOT NULL, `splitAssignmentId` INTEGER NOT NULL, `splitName` TEXT, `authToken` TEXT, `baseUrl` TEXT, `createdAtMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventName",
+            "columnName": "eventName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "raceName",
+            "columnName": "raceName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "raceId",
+            "columnName": "raceId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gunTimeMs",
+            "columnName": "gunTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "splitAssignmentId",
+            "columnName": "splitAssignmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "splitName",
+            "columnName": "splitName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "authToken",
+            "columnName": "authToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "baseUrl",
+            "columnName": "baseUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '84174106cdee104e30630a01be45a9ea')"
+    ]
+  }
+}

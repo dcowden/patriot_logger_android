@@ -1,0 +1,42 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="8dp">
+
+    <ImageView
+        android:id="@+id/imgStatus"
+        android:layout_width="50sp"
+        android:layout_height="50sp"
+        android:layout_gravity="center_vertical"
+        android:contentDescription="@string/status_icon"
+        app:srcCompat="@drawable/img_approaching" />
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:paddingStart="8dp">
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tauro (PT-123)"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="approaching"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSplit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="4:25"
+        android:textStyle="bold"/>
+</LinearLayout>
+

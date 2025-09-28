@@ -1,0 +1,75 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="75sp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="75sp"
+            android:layout_height="match_parent"
+            android:src="@drawable/patriot_logo" />
+
+        <TextView
+            android:id="@+id/tvHeader"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:text="Event • Race • Split • Group"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnDebug"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Debug" />
+    </LinearLayout>
+
+    <!-- Clock -->
+    <TextView
+        android:id="@+id/tvClock"
+        android:layout_width="match_parent"
+        android:layout_height="319dp"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:text="--:--"
+        android:textSize="64sp"
+        android:textStyle="bold"
+        android:typeface="monospace" />
+
+    <!-- List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler"
+        android:layout_width="match_parent"
+        android:layout_height="153dp"
+        android:layout_weight="1"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
+
+    <!-- Upload / Start FAB-like Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnAction"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnStop"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="384dp"
+        android:layout_height="5sp"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1"
+        android:text="Stop"
+        android:visibility="visible" />
+</LinearLayout>

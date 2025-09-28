@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application Name -->
+    <string name="app_name">Patriot Split Logger</string>
+    <string name="status_icon">Status icon</string>
+
+
+    <!-- Main Activity -->
+    <string name="time_since_gun">Time Since Gun</string>
+    <string name="runners">Runners</string>
+    <string name="start_race">Start Race</string>
+    <string name="upload">Upload</string>
+    <string name="close">Close</string>
+    <string name="action_debug">Debug</string>
+
+    <!-- Runner Status -->
+    <string name="status_not_seen">Not Seen</string>
+    <string name="status_approaching">Approaching</string>
+    <string name="status_here">Here</string>
+    <string name="status_logged">Logged</string>
+
+    <!-- Upload Status -->
+    <string name="upload_successful">Upload successful</string>
+    <string name="upload_failed">Upload failed</string>
+    <string name="upload_in_progress">Uploading...</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_name">Split Logging</string>
+    <string name="notification_channel_description">Notifications for split logging activities</string>
+    <string name="notification_scanning">Scanning for Runners...</string>
+    <string name="notification_approaching">%1$s (PT-%2$d) approaching</string>
+    <string name="notification_here">%1$s (PT-%2$d) passing</string>
+    <string name="notification_logged">%1$s (PT-%2$d) logged %3$s</string>
+
+    <!-- Bluetooth Service -->
+    <string name="service_name">Bluetooth Split Scanner</string>
+    <string name="service_description">Scanning for runner tags</string>
+
+    <!-- Debug Activity -->
+    <string name="debug_title">Debug Monitor</string>
+    <string name="debug_clear">Clear</string>
+    <string name="debug_auto_scroll">Auto Scroll</string>
+
+    <!-- Permissions -->
+    <string name="permission_bluetooth_title">Bluetooth Permission Required</string>
+    <string name="permission_bluetooth_message">This app needs Bluetooth permission to scan for runner tags.</string>
+    <string name="permission_location_title">Location Permission Required</string>
+    <string name="permission_location_message">This app needs location permission for Bluetooth scanning on Android 6.0+.</string>
+    <string name="permission_denied">Permission denied. Cannot scan for runners.</string>
+
+    <!-- Errors -->
+    <string name="error_invalid_data">Invalid data received</string>
+    <string name="error_no_data">No data parameter found</string>
+    <string name="error_invalid_scheme">Invalid intent scheme</string>
+    <string name="error_no_race_data">No race data available</string>
+    <string name="error_network">Network error occurred</string>
+    <string name="error_server">Server error occurred</string>
+    <string name="error_parse_json">Failed to parse server response</string>
+    <string name="error_unknown">Unknown error occurred</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_logo">Patriot Logger Logo</string>
+    <string name="cd_runner_status">Runner Status</string>
+    <string name="cd_action_button">Action Button</string>
+
+    <!-- Format Strings -->
+    <string name="format_tag_display">PT-%1$d</string>
+    <string name="format_runner_name">%1$s (PT-%2$d)</string>
+    <string name="format_time_mm_ss">%1$02d:%2$02d</string>
+    <string name="format_rssi_samples">RSSI: %1$d dBm | Samples: %2$d</string>
+    <string name="format_upload_count">Upload (%1$d/%2$d)</string>
+
+    <!-- Default Values -->
+    <string name="default_event_name">Event Name</string>
+    <string name="default_race_name">Race Name</string>
+    <string name="default_split_location">Split Location</string>
+    <string name="default_group">Group</string>
+    <string name="default_clock_display">--:--</string>
+
+    <!-- Menu Items -->
+    <string name="menu_debug">Debug</string>
+    <string name="menu_settings">Settings</string>
+
+    <!-- Debug Screen -->
+    <string name="debug_header_timestamp">Timestamp</string>
+    <string name="debug_header_tag">Tag</string>
+    <string name="debug_header_rssi">RSSI</string>
+    <string name="debug_header_status">Status</string>
+
+    <!-- Settings/Config -->
+    <string name="config_kalman_q">Kalman Q</string>
+    <string name="config_kalman_r">Kalman R</string>
+    <string name="config_kalman_p">Kalman P</string>
+    <string name="config_loss_time">Loss Time (ms)</string>
+    <string name="config_peak_samples">Peak Detection Samples</string>
+    <string name="config_server_url">Server URL</string>
+</resources>

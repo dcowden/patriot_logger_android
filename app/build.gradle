@@ -1,0 +1,85 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.androidx.room) // Apply the Room plugin
+}
+
+android {
+    namespace = 'com.patriotlogger.logger'
+    compileSdk = 36
+    defaultConfig {
+        applicationId = "com.patriotlogger.logger"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
+dependencies {
+    // Room Database Dependencies
+    implementation libs.androidx.room.runtime
+
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    implementation libs.androidx.activity // For ActivityResultContracts
+
+    // Lifecycle components
+    //implementation libs.androidx.lifecycle.livedata.ktx // Even for Java, these -ktx often have Java-compatible helpers
+    implementation libs.androidx.lifecycle.viewmodel.ktx
+
+    // Room components
+    implementation libs.androidx.room.runtime
+    implementation libs.androidx.recyclerview
+    annotationProcessor libs.androidx.room.compiler
+    // For Room with Java, you don't strictly need room-ktx unless using coroutines from Kotlin side
+
+    // WorkManager
+    implementation libs.androidx.work.runtime
+
+    implementation libs.gson
+    implementation "tech.tablesaw:tablesaw-core:0.44.4"
+    // OkHttp for network
+    implementation 'com.squareup.okhttp3:okhttp:5.1.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:5.1.0'
+
+    implementation libs.easypermissions
+    // AndroidX core + AppCompat (fixes "AppCompatActivity not found")
+    implementation libs.androidx.core
+    implementation libs.androidx.appcompat
+
+    // Activity Result API (fixes registerForActivityResult not found)
+    implementation libs.androidx.activity
+
+    // WebKit helpers for WebView (optional but good)
+    implementation libs.androidx.webkit
+
+    // Material (optional theme)
+    implementation libs.material
+
+    testImplementation libs.junit
+    testImplementation "org.mockito:mockito-core:5.20.0"
+
+
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
+    androidTestImplementation "org.mockito:mockito-android:5.20.0"
+}
