@@ -6,23 +6,19 @@ import androidx.annotation.WorkerThread;
 import androidx.lifecycle.LiveData;
 import androidx.room.Room;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-/**
- * Single entry point to Room. All writes go through a single IO executor.
- * Never call DAO methods from Activities/Fragments directly.
- */
 public final class Repository {
     private static volatile Repository instance;
     private final AppDatabase db;
     private final Executor io = Executors.newSingleThreadExecutor();
 
     private Repository(Context ctx) {
-        // Remember to increment DB version in AppDatabase if schema changes
         db = Room.databaseBuilder(ctx.getApplicationContext(), AppDatabase.class, "psl.db")
-                .fallbackToDestructiveMigration() // Existing strategy, fine for dev
+                .fallbackToDestructiveMigration()
                 .build();
     }
 
@@ -40,29 +36,69 @@ public final class Repository {
         return db.tagStatusDao().liveAll();
     }
 
-    /** For background use only (e.g., from services/workers). */
     @WorkerThread
-    public TagStatus getTagStatusNow(int id) {
-        return db.tagStatusDao().getSync(id);
+    public TagStatus getTagStatusByTrackIdNow(int trackId) {
+        return db.tagStatusDao().getByTrackIdSync(trackId);
+    }
+    
+    @WorkerThread
+    public TagStatus getActiveTagStatusForTagIdNow(int tagId) {
+        return db.tagStatusDao().getActiveStatusForTagIdSync(tagId);
+    }
+    
+    @WorkerThread
+    public TagStatus getTagStatusByTagIdAndStatesNow(int tagId, List<TagStatus.TagStatusState> states) {
+        List<String> stateStrings = new ArrayList<>();
+        for (TagStatus.TagStatusState state : states) {
+            stateStrings.add(state.name());
+        }
+        List<TagStatus> resultList = db.tagStatusDao().getByTagIdAndStatesSync(tagId, stateStrings);
+        if (resultList != null && !resultList.isEmpty()) {
+            return resultList.get(0); // Return the first element if the list is not empty
+        }
+        return null; // Return null if no matching status is found or list is empty
     }
 
     public void upsertTagStatus(TagStatus s) {
         io.execute(() -> db.tagStatusDao().upsert(s));
     }
-
-    // ---------- KalmanState ----------
-    /** For background use only (e.g., from services/workers or new logic class). */
+    
     @WorkerThread
-    public KalmanState getKalmanStateByTagIdSync(int tagId) {
-        return db.kalmanStateDao().getByTagIdSync(tagId);
+    public int upsertTagStatusSync(TagStatus s) {
+        return (int) db.tagStatusDao().upsertSync(s); 
+    }
+    
+    @WorkerThread
+    public List<TagStatus> getAllTagStatusesSync() {
+        return db.tagStatusDao().getAllSync();
     }
 
-    public void upsertKalmanState(KalmanState kalmanState) {
-        io.execute(() -> db.kalmanStateDao().upsert(kalmanState));
+    // ---------- TagData ----------
+    public void insertTagData(TagData tagData) {
+        io.execute(() -> db.tagDataDao().insert(tagData));
     }
 
-    public void deleteKalmanStateByTagId(int tagId) {
-        io.execute(() -> db.kalmanStateDao().deleteByTagId(tagId));
+    @WorkerThread
+    public List<TagData> getSamplesForTrackIdSync(int trackId) {
+        return db.tagDataDao().getSamplesForTrackIdSync(trackId);
+    }
+    
+    @WorkerThread
+    public List<TagData> getAllTagDataSync() {
+        return db.tagDataDao().getAllTagDataSync();
+    }
+
+    public LiveData<Integer> getTotalSamplesCount() {
+        return db.tagDataDao().getTotalSamplesCount();
+    }
+    
+    @WorkerThread
+    public int getTotalSamplesCountSync() {
+        return db.tagDataDao().getTotalSamplesCountSync();
+    }
+
+    public void deleteSamplesForTrackId(int trackId) {
+        io.execute(() -> db.tagDataDao().deleteSamplesForTrackIdSync(trackId));
     }
 
     // ---------- Racer ----------
@@ -70,10 +106,14 @@ public final class Repository {
         io.execute(() -> db.racerDao().upsertAll(rs));
     }
 
-    /** For background use only. */
     @WorkerThread
     public Racer getRacerNow(int id) {
         return db.racerDao().getSync(id);
+    }
+
+    @WorkerThread
+    public List<Racer> getRacersForSplitAssignmentSync(int splitAssignmentId) {
+        return db.racerDao().getBySplitSync(splitAssignmentId); // Corrected method name
     }
 
     // ---------- RaceContext ----------
@@ -81,24 +121,18 @@ public final class Repository {
         return db.raceContextDao().liveLatest();
     }
 
-    /** For background use only. */
     @WorkerThread
     public RaceContext latestContextNow() {
         return db.raceContextDao().latestSync();
     }
 
-    /** Persist full context (background). */
     public void upsertContext(RaceContext c) {
         io.execute(() -> db.raceContextDao().upsert(c));
     }
 
-    /**
-     * Set/override gun time for the latest context.
-     * Runs entirely off the UI thread to satisfy Room’s threading rules.
-     */
     public void setGunTime(long gunTimeMs) {
         io.execute(() -> {
-            RaceContext ctx = db.raceContextDao().latestSync(); // background thread
+            RaceContext ctx = db.raceContextDao().latestSync(); 
             if (ctx != null) {
                 ctx.gunTimeMs = gunTimeMs;
                 db.raceContextDao().upsert(ctx);
@@ -106,29 +140,31 @@ public final class Repository {
         });
     }
 
-    // ---------- Synchronous bulk queries (use with caution, background only) ----------
-    /** For background use only. */
+    // ---------- Settings (Config) ----------
     @WorkerThread
-    public List<TagStatus> allTagStatusesNow() {
-        // This was previously returning liveAll().getValue() which can be problematic.
-        // If a truly synchronous list is needed, a new DAO method for it would be better.
-        // For now, assuming this is for specific background tasks and liveData.getValue() was intentional.
-        return db.tagStatusDao().liveAll().getValue(); // Keep an eye on this if it causes issues.
+    public Setting getConfigSync() {
+        return db.settingDao().getConfigSync(Setting.SETTINGS_ID);
     }
 
-    /** For background use only. */
-    @WorkerThread
-    public List<Racer> racersForSplitNow(int splitAssignmentId) {
-        return db.racerDao().getBySplitSync(splitAssignmentId);
+    public LiveData<Setting> getLiveConfig() {
+        return db.settingDao().getLiveConfig(Setting.SETTINGS_ID);
     }
+
+    public void upsertConfig(Setting setting) {
+        // Ensure the setting being upserted always uses the correct ID
+        setting.id = Setting.SETTINGS_ID;
+        io.execute(() -> db.settingDao().upsertConfig(setting));
+    }
+    
 
     // ---------- Maintenance ----------
     public void clearAll() {
         io.execute(() -> {
             db.tagStatusDao().clear();
+            db.tagDataDao().clear();
             db.racerDao().clear();
             db.raceContextDao().clear();
-            db.kalmanStateDao().clear(); // Added to clear Kalman states as well
+            db.settingDao().clear(); 
         });
     }
 }

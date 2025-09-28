@@ -40,7 +40,7 @@ androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview"
 
 # Mockito libraries
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
-mockito-inline = { group = "org.mockito", name = "mockito-inline", version.ref = "mockito" }
+
 
 
 [plugins]

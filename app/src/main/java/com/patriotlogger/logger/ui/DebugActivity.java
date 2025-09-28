@@ -39,21 +39,13 @@ public class DebugActivity extends AppCompatActivity {
 
         btnStartScan.setOnClickListener(v -> {
             Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START);
-            if (Build.VERSION.SDK_INT >= 26) {
-                startForegroundService(svcIntent);
-            } else {
-                startService(svcIntent);
-            }
+            startForegroundService(svcIntent);
             Toast.makeText(this, "Start Scan command sent", Toast.LENGTH_SHORT).show();
         });
 
         btnStopScan.setOnClickListener(v -> {
             Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP);
-             if (Build.VERSION.SDK_INT >= 26) {
-                startForegroundService(svcIntent); // Or stopService(svcIntent) if appropriate
-            } else {
-                startService(svcIntent); // Or stopService(svcIntent)
-            }
+            startForegroundService(svcIntent); // Or stopService(svcIntent) if appropriate
             Toast.makeText(this, "Stop Scan command sent", Toast.LENGTH_SHORT).show();
         });
 

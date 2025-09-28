@@ -2,11 +2,15 @@ package com.patriotlogger.logger.data;
 
 import androidx.room.Database;
 import androidx.room.RoomDatabase;
+import androidx.room.TypeConverters;
 
-@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, KalmanState.class}, version = 2) // Added KalmanState.class, incremented version
+// Settings entity changed to single-row config, incremented version to 6
+@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, Setting.class, TagData.class}, version = 6) 
+@TypeConverters({TagStatusStateConverter.class})
 public abstract class AppDatabase extends RoomDatabase {
     public abstract TagStatusDao tagStatusDao();
     public abstract RacerDao racerDao();
     public abstract RaceContextDao raceContextDao();
-    public abstract KalmanStateDao kalmanStateDao(); // Added KalmanStateDao
+    public abstract SettingDao settingDao();
+    public abstract TagDataDao tagDataDao();
 }

@@ -1,0 +1,16 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_set_gun_time"
+        android:title="Set Gun Time"
+        android:icon="@android:drawable/ic_menu_recent_history" 
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_clear_log"
+        android:title="Clear All Data"
+        android:icon="@android:drawable/ic_menu_delete" 
+        app:showAsAction="never" />
+
+</menu>

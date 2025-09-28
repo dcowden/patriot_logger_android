@@ -21,6 +21,7 @@ import com.patriotlogger.logger.data.RaceContext;
 import com.patriotlogger.logger.data.Racer;
 import com.patriotlogger.logger.data.Repository;
 import com.patriotlogger.logger.data.TagStatus;
+import com.patriotlogger.logger.data.TagData; 
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -30,6 +31,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,36 +55,43 @@ public class UploadWorker extends Worker {
                 .build();
 
         WorkManager.getInstance(ctx).enqueue(req);
+        Log.d(TAG, "UploadWorker enqueued.");
     }
 
     @NonNull @Override public Result doWork() {
+        Log.d(TAG, "doWork started.");
         Repository repo = Repository.get(getApplicationContext());
 
-        // Safe: doWork() runs off the main thread.
         RaceContext ctx = repo.latestContextNow();
         if (ctx == null) {
             Log.w(TAG, "No RaceContext in DB; nothing to upload.");
-            return Result.failure();
+            return Result.failure(); 
         }
 
         String endpoint = ctx.baseUrl;
         if (TextUtils.isEmpty(endpoint)) {
-            endpoint = "https://splitriot.onrender.com/upload";
+            endpoint = "https.splitriot.onrender.com/upload"; 
+            Log.w(TAG, "Using default endpoint: " + endpoint);
         }
         String token = ctx.authToken;
         if (TextUtils.isEmpty(token)) {
-            Log.w(TAG, "Missing auth token; refusing to upload.");
-            return Result.failure();
+            Log.e(TAG, "Missing auth token; refusing to upload.");
+            return Result.failure(); 
         }
 
-        List<TagStatus> statuses = repo.allTagStatusesNow();
-        List<Racer> racers = repo.racersForSplitNow(ctx.splitAssignmentId);
+        List<TagStatus> statuses = repo.getAllTagStatusesSync();
+        if (statuses == null) statuses = Collections.emptyList();
+
+        List<Racer> racers = repo.getRacersForSplitAssignmentSync(ctx.splitAssignmentId);
+        if (racers == null) racers = Collections.emptyList();
+        
         Map<Integer, String> namesById = new HashMap<>();
         for (Racer r : racers) {
-            namesById.put(r.id, r.name != null ? r.name : "");
+            if (r != null) { 
+                namesById.put(r.id, r.name != null ? r.name : "");
+            }
         }
 
-        // Build payload
         JsonObject root = new JsonObject();
         root.addProperty("race_id", ctx.raceId);
         root.addProperty("gun_time", ctx.gunTimeMs);
@@ -92,46 +101,51 @@ public class UploadWorker extends Worker {
 
         JsonArray racersArr = new JsonArray();
         for (TagStatus s : statuses) {
+            if (s == null) continue; 
+
             JsonObject rj = new JsonObject();
             rj.addProperty("id", s.tagId);
             String name = (s.friendlyName != null && !s.friendlyName.isEmpty())
                     ? s.friendlyName
                     : namesById.getOrDefault(s.tagId, "");
-            rj.addProperty("name", name);
+            rj.addProperty("name", name != null ? name : ""); 
 
-            // All times are ms since epoch per your spec
             rj.addProperty("entry_time", s.entryTimeMs);
             rj.addProperty("peak_time",  s.peakTimeMs);
             rj.addProperty("exit_time",  s.exitTimeMs);
+            
+            rj.addProperty("peak_rssi",   s.lowestRssi);
+            rj.addProperty("lowest_rssi", s.lowestRssi); 
 
-            // RSSI fields
-            rj.addProperty("peak_rssi",   s.peakRssi);     // float/double fine in JSON
-            rj.addProperty("lowest_rssi", s.lowestRssi);   // int
-            rj.addProperty("num_samples", s.sampleCount);  // int
+            List<TagData> samples = repo.getSamplesForTrackIdSync(s.trackId);
+            int sampleCount = (samples != null) ? samples.size() : 0;
+            rj.addProperty("num_samples", sampleCount);
 
             racersArr.add(rj);
         }
         splitData.add("racers", racersArr);
         root.add("split_data", splitData);
+        
+        String payload = root.toString();
+        Log.d(TAG, "Upload payload: " + payload);
 
-        // POST
         try {
-            int code = postJson(endpoint, token, root.toString());
-            if (code == 200) {
-                Log.i(TAG, "Upload success (200).");
+            int code = postJson(endpoint, token, payload);
+            if (code == 200 || code == 201) { 
+                Log.i(TAG, "Upload success (HTTP " + code + ").");
                 return Result.success();
             } else if (code == 408 || code == 429 || (code >= 500 && code < 600)) {
-                Log.w(TAG, "Server temporary error " + code + "; will retry.");
+                Log.w(TAG, "Server temporary error (HTTP " + code + "); will retry.");
                 return Result.retry();
             } else {
-                Log.e(TAG, "Permanent failure HTTP " + code + "; will not retry.");
+                Log.e(TAG, "Upload permanent failure (HTTP " + code + "); will not retry.");
                 return Result.failure();
             }
         } catch (IOException ioe) {
-            Log.w(TAG, "Network I/O error; will retry. " + ioe);
+            Log.w(TAG, "Network I/O error during upload; will retry.", ioe);
             return Result.retry();
         } catch (Exception e) {
-            Log.e(TAG, "Unexpected error; failing. " + e);
+            Log.e(TAG, "Unexpected error during upload; failing.", e);
             return Result.failure();
         }
     }
@@ -141,8 +155,8 @@ public class UploadWorker extends Worker {
         try {
             URL url = new URL(endpoint);
             conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(15000);
-            conn.setReadTimeout(20000);
+            conn.setConnectTimeout(15000); 
+            conn.setReadTimeout(20000);    
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
@@ -156,11 +170,15 @@ public class UploadWorker extends Worker {
             }
 
             int code = conn.getResponseCode();
-            // Helpful for debugging server errors:
-            InputStream es = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
-            if (es != null) {
-                String resp = slurp(es);
-                Log.d(TAG, "Server response (" + code + "): " + resp);
+            
+            InputStream responseStream = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
+            if (responseStream != null) {
+                try (InputStream streamToProcess = responseStream) { // Use try-with-resources for auto-closing
+                    String responseBody = slurp(streamToProcess); 
+                    Log.d(TAG, "Server response (HTTP " + code + "): " + responseBody);
+                } // streamToProcess (and thus responseStream) is closed here
+            } else {
+                Log.d(TAG, "Server response (HTTP " + code + ") with no body.");
             }
             return code;
         } finally {
@@ -171,7 +189,10 @@ public class UploadWorker extends Worker {
     private static String slurp(InputStream in) throws IOException {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(in, UTF_8))) {
             StringBuilder sb = new StringBuilder();
-            String line; while ((line = br.readLine()) != null) sb.append(line);
+            String line; 
+            while ((line = br.readLine()) != null) {
+                sb.append(line);
+            }
             return sb.toString();
         }
     }

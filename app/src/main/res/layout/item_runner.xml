@@ -7,36 +7,47 @@
 
     <ImageView
         android:id="@+id/imgStatus"
-        android:layout_width="50sp"
-        android:layout_height="50sp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:layout_gravity="center_vertical"
         android:contentDescription="@string/status_icon"
-        app:srcCompat="@drawable/img_approaching" />
+        app:srcCompat="@drawable/img_approaching" /> <!-- Default icon, will be changed by adapter -->
 
     <LinearLayout
         android:orientation="vertical"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:paddingStart="8dp">
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
         <TextView
             android:id="@+id/tvName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Tauro (PT-123)"
-            android:textStyle="bold"/>
+            android:text="Runner Name (#TAG P:TRK)"
+            android:textStyle="bold"
+            android:textAppearance="?attr/textAppearanceListItem"/>
         <TextView
             android:id="@+id/tvStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="approaching"/>
+            android:text="STATE"
+            android:textAppearance="?attr/textAppearanceListItemSecondary"/>
+        <TextView
+            android:id="@+id/tvLastSeen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Seen: HH:mm:ss"
+            android:textAppearance="?attr/textAppearanceListItemSecondary"
+            android:textSize="12sp"/>
     </LinearLayout>
 
     <TextView
         android:id="@+id/tvSplit"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="4:25"
-        android:textStyle="bold"/>
+        android:layout_gravity="center_vertical"
+        android:text="MM:SS.mmm"
+        android:textStyle="bold"
+        android:textAppearance="?attr/textAppearanceListItem"/>
 </LinearLayout>
-

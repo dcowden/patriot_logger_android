@@ -1,211 +1,210 @@
 package com.patriotlogger.logger.logic;
 
-import com.patriotlogger.logger.data.KalmanState;
-import com.patriotlogger.logger.data.Racer;
-import com.patriotlogger.logger.data.Repository;
+import android.util.Log;
+import com.patriotlogger.logger.data.TagData;
 import com.patriotlogger.logger.data.TagStatus;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
 
-@RunWith(MockitoJUnitRunner.class)
+@RunWith(MockitoJUnitRunner.class) 
 public class TagProcessorTest {
 
-    @Mock
-    private Repository mockRepository;
-
-    private TagProcessorConfig config;
     private TagProcessor tagProcessor;
+    private MockedStatic<Log> mockedLog;
 
     private final int TEST_TAG_ID = 101;
+    private final int TEST_TRACK_ID = 1;
+    private final String TEST_FRIENDLY_NAME = "Test Racer";
+    private final long ENTRY_TIME_MS = 9000L;
     private final long CURRENT_TIME_MS = 10000L;
-    private final float DEFAULT_Q = 0.001f;
-    private final float DEFAULT_R = 0.1f;
-    private final float DEFAULT_P_INITIAL = 0.05f;
     private final long LOSS_TIMEOUT_MS = 1000L;
-    private final int SAMPLES_FOR_HERE = 3;
+    private final int ARRIVED_THRESHOLD_RSSI = -60;
+    private final int INITIAL_RSSI = -75;
+    private final int APPROACHING_RSSI = -70;
 
     @Before
     public void setUp() {
-        config = new TagProcessorConfig(LOSS_TIMEOUT_MS, SAMPLES_FOR_HERE, DEFAULT_Q, DEFAULT_R, DEFAULT_P_INITIAL);
-        tagProcessor = new TagProcessor(mockRepository, config);
+        tagProcessor = new TagProcessor();
+        // Mock all static methods of android.util.Log
+        mockedLog = Mockito.mockStatic(Log.class);
+    }
+
+    @After
+    public void tearDown() {
+        // Close the static mock after each test to avoid interference
+        if (mockedLog != null) {
+            mockedLog.close();
+        }
+    }
+
+    // Helper to create a pre-initialized TagStatus for tests
+    private TagStatus createInitialTagStatus(int tagId, String friendlyName, long entryTimeMs, float initialRssi) {
+        TagStatus status = new TagStatus();
+        status.tagId = tagId;
+        status.trackId = TEST_TRACK_ID; 
+        status.friendlyName = friendlyName;
+        status.entryTimeMs = entryTimeMs;
+        status.lastSeenMs = entryTimeMs; 
+        status.exitTimeMs = entryTimeMs;   
+        status.state = TagStatus.TagStatusState.APPROACHING;
+        status.lowestRssi = initialRssi;
+        return status;
     }
 
     @Test
-    public void processSample_newTag_initializesCorrectly() {
-        when(mockRepository.getTagStatusNow(TEST_TAG_ID)).thenReturn(null);
-        when(mockRepository.getKalmanStateByTagIdSync(TEST_TAG_ID)).thenReturn(null);
-        when(mockRepository.getRacerNow(TEST_TAG_ID)).thenReturn(new Racer(TEST_TAG_ID, "Test Racer"));
+    public void processSample_updatesLastSeenAndExitTimes() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        long newTimeMs = CURRENT_TIME_MS;
 
-        TagStatus result = tagProcessor.processSample(TEST_TAG_ID, -50, CURRENT_TIME_MS);
+        TagStatus result = tagProcessor.processSample(status, APPROACHING_RSSI, newTimeMs, ARRIVED_THRESHOLD_RSSI);
+
+        assertSame(status, result); 
+        assertEquals(newTimeMs, result.lastSeenMs);
+        assertEquals(newTimeMs, result.exitTimeMs);
+    }
+
+    @Test
+    public void processSample_updatesLowestRssi_whenNewRssiIsLower() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI); 
+        int lowerRssi = -80;
+
+        TagStatus result = tagProcessor.processSample(status, lowerRssi, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
+        assertEquals(lowerRssi, result.lowestRssi, 0.01f);
+    }
+
+    @Test
+    public void processSample_doesNotUpdateLowestRssi_whenNewRssiIsHigher() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI); 
+        int higherRssi = -70;
+
+        TagStatus result = tagProcessor.processSample(status, higherRssi, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
+        assertEquals(INITIAL_RSSI, result.lowestRssi, 0.01f);
+    }
+
+    @Test
+    public void processSample_transitionsToHereState_whenRssiMeetsThreshold() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        status.state = TagStatus.TagStatusState.APPROACHING; 
+
+        TagStatus result = tagProcessor.processSample(status, ARRIVED_THRESHOLD_RSSI, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
+        assertEquals(TagStatus.TagStatusState.HERE, result.state);
+    }
+
+    @Test
+    public void processSample_remainsApproaching_whenRssiBelowThreshold() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        status.state = TagStatus.TagStatusState.APPROACHING; 
+
+        TagStatus result = tagProcessor.processSample(status, ARRIVED_THRESHOLD_RSSI - 5, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
+        assertEquals(TagStatus.TagStatusState.APPROACHING, result.state);
+    }
+    
+    @Test
+    public void processSample_alreadyHere_remainsHere_whenRssiChanges() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        status.state = TagStatus.TagStatusState.HERE; 
+
+        TagStatus result = tagProcessor.processSample(status, ARRIVED_THRESHOLD_RSSI - 5, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
+        assertEquals(TagStatus.TagStatusState.HERE, result.state);
+        assertEquals(CURRENT_TIME_MS, result.lastSeenMs);
+    }
+
+    @Test
+    public void processSample_doesNotChangeExitTime_ifAlreadyLogged() {
+        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        status.state = TagStatus.TagStatusState.LOGGED;
+        status.exitTimeMs = ENTRY_TIME_MS; 
+        
+        long newTimeMs = CURRENT_TIME_MS;
+        tagProcessor.processSample(status, APPROACHING_RSSI, newTimeMs, ARRIVED_THRESHOLD_RSSI);
+
+        assertEquals(ENTRY_TIME_MS, status.exitTimeMs); 
+        assertEquals(newTimeMs, status.lastSeenMs); 
+    }
+
+    @Test
+    public void processTagExit_tagTimesOut_marksLogged_setsPeakTimeFromSamples() {
+        TagStatus activeStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        activeStatus.state = TagStatus.TagStatusState.HERE;
+        activeStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS; 
+        activeStatus.exitTimeMs = activeStatus.lastSeenMs;
+
+        List<TagData> samples = new ArrayList<>();
+        samples.add(new TagData(TEST_TRACK_ID, activeStatus.lastSeenMs - 200, -70));
+        long peakTimeForThisTest = activeStatus.lastSeenMs - 100;
+        samples.add(new TagData(TEST_TRACK_ID, peakTimeForThisTest, -50)); 
+        samples.add(new TagData(TEST_TRACK_ID, activeStatus.lastSeenMs, -65));
+
+        TagStatus result = tagProcessor.processTagExit(activeStatus, samples, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
 
         assertNotNull(result);
-        assertEquals(TEST_TAG_ID, result.tagId);
-        assertEquals("approaching", result.state);
-        assertEquals(CURRENT_TIME_MS, result.entryTimeMs);
-        assertEquals(CURRENT_TIME_MS, result.lastSeenMs);
-        assertEquals(1, result.sampleCount);
-        assertEquals(-50, result.peakRssi, 0.1f); // Initial RSSI is also peak
-
-        ArgumentCaptor<TagStatus> tsCaptor = ArgumentCaptor.forClass(TagStatus.class);
-        ArgumentCaptor<KalmanState> ksCaptor = ArgumentCaptor.forClass(KalmanState.class);
-        verify(mockRepository).upsertTagStatus(tsCaptor.capture());
-        verify(mockRepository).upsertKalmanState(ksCaptor.capture());
-
-        assertEquals(DEFAULT_Q, ksCaptor.getValue().q, 0.0001f);
-        assertEquals(DEFAULT_R, ksCaptor.getValue().r, 0.0001f);
-        // p would be defaultP + defaultQ after first prediction, then updated by measurement
-        assertTrue(ksCaptor.getValue().initialized);
+        assertSame(activeStatus, result);
+        assertEquals(TagStatus.TagStatusState.LOGGED, result.state);
+        assertEquals(peakTimeForThisTest, result.peakTimeMs);
+        assertEquals(activeStatus.lastSeenMs, result.exitTimeMs);
     }
 
     @Test
-    public void processSample_existingTag_updatesAndPersists() {
-        TagStatus existingStatus = new TagStatus();
-        existingStatus.tagId = TEST_TAG_ID;
-        existingStatus.state = "approaching";
-        existingStatus.sampleCount = 1;
-        existingStatus.peakRssi = -60f;
-        existingStatus.lastSeenMs = CURRENT_TIME_MS - 100;
+    public void processTagExit_tagTimesOut_noSamples_setsPeakTimeToLastSeen() {
+        TagStatus activeStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        activeStatus.state = TagStatus.TagStatusState.APPROACHING;
+        activeStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS; 
+        activeStatus.exitTimeMs = activeStatus.lastSeenMs;
 
-        KalmanState existingKalman = new KalmanState(TEST_TAG_ID, DEFAULT_Q, DEFAULT_R, 0.02f, -60f, true);
+        TagStatus result = tagProcessor.processTagExit(activeStatus, Collections.emptyList(), CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
 
-        when(mockRepository.getTagStatusNow(TEST_TAG_ID)).thenReturn(existingStatus);
-        when(mockRepository.getKalmanStateByTagIdSync(TEST_TAG_ID)).thenReturn(existingKalman);
-
-        tagProcessor.processSample(TEST_TAG_ID, -55, CURRENT_TIME_MS); // Better RSSI, new peak
-
-        ArgumentCaptor<TagStatus> tsCaptor = ArgumentCaptor.forClass(TagStatus.class);
-        ArgumentCaptor<KalmanState> ksCaptor = ArgumentCaptor.forClass(KalmanState.class);
-
-        verify(mockRepository).upsertTagStatus(tsCaptor.capture());
-        verify(mockRepository).upsertKalmanState(ksCaptor.capture());
-
-        assertEquals(2, tsCaptor.getValue().sampleCount);
-        assertTrue(tsCaptor.getValue().peakRssi > -60f); // Should be updated towards -55
-        assertEquals(0, tsCaptor.getValue().belowPeakCount); // Reset due to new peak
-        assertEquals(CURRENT_TIME_MS, tsCaptor.getValue().lastSeenMs);
+        assertNotNull(result);
+        assertEquals(TagStatus.TagStatusState.LOGGED, result.state);
+        assertEquals(activeStatus.lastSeenMs, result.peakTimeMs);
+        assertEquals(activeStatus.lastSeenMs, result.exitTimeMs);
     }
 
     @Test
-    public void processSample_transitionsToHereState() {
-        TagStatus status = new TagStatus();
-        status.tagId = TEST_TAG_ID;
-        status.state = "approaching";
-        status.sampleCount = SAMPLES_FOR_HERE - 1; // One sample away from transition
-        status.peakRssi = -50f;
-        status.belowPeakCount = SAMPLES_FOR_HERE - 1;
-        status.lastSeenMs = CURRENT_TIME_MS - 100;
+    public void processTagExit_tagTimesOut_nullSamples_setsPeakTimeToLastSeen() {
+        TagStatus activeStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        activeStatus.state = TagStatus.TagStatusState.APPROACHING;
+        activeStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS; 
+        activeStatus.exitTimeMs = activeStatus.lastSeenMs;
 
-        KalmanState kalman = new KalmanState(TEST_TAG_ID, DEFAULT_Q, DEFAULT_R, 0.02f, -52f, true);
+        TagStatus result = tagProcessor.processTagExit(activeStatus, null, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
 
-        when(mockRepository.getTagStatusNow(TEST_TAG_ID)).thenReturn(status);
-        when(mockRepository.getKalmanStateByTagIdSync(TEST_TAG_ID)).thenReturn(kalman);
-
-        tagProcessor.processSample(TEST_TAG_ID, -62, CURRENT_TIME_MS); // RSSI below peak
-
-        ArgumentCaptor<TagStatus> tsCaptor = ArgumentCaptor.forClass(TagStatus.class);
-        verify(mockRepository).upsertTagStatus(tsCaptor.capture());
-
-        //assertEquals("here", tsCaptor.getValue().state);
-        assertEquals(SAMPLES_FOR_HERE, tsCaptor.getValue().belowPeakCount);
+        assertNotNull(result);
+        assertEquals(TagStatus.TagStatusState.LOGGED, result.state);
+        assertEquals(activeStatus.lastSeenMs, result.peakTimeMs);
     }
 
     @Test
-    public void processSample_loggedTag_resetsForNewPass() {
-        TagStatus loggedStatus = new TagStatus();
-        loggedStatus.tagId = TEST_TAG_ID;
-        loggedStatus.state = "logged";
-        loggedStatus.sampleCount = 10;
-        loggedStatus.peakRssi = -40f;
-        loggedStatus.lastSeenMs = CURRENT_TIME_MS - (LOSS_TIMEOUT_MS * 2);
+    public void processTagExit_activeTag_notTimedOut_returnsNull() {
+        TagStatus activeStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        activeStatus.state = TagStatus.TagStatusState.APPROACHING;
+        activeStatus.lastSeenMs = CURRENT_TIME_MS - (LOSS_TIMEOUT_MS / 2); 
 
-        // Kalman state for a logged tag would typically be deleted by sweepForLosses,
-        // so getKalmanStateByTagIdSync would return null for a new pass.
-        when(mockRepository.getTagStatusNow(TEST_TAG_ID)).thenReturn(loggedStatus);
-        when(mockRepository.getKalmanStateByTagIdSync(TEST_TAG_ID)).thenReturn(null);
+        TagStatus result = tagProcessor.processTagExit(activeStatus, null, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
 
-        tagProcessor.processSample(TEST_TAG_ID, -60, CURRENT_TIME_MS);
-
-        ArgumentCaptor<TagStatus> tsCaptor = ArgumentCaptor.forClass(TagStatus.class);
-        ArgumentCaptor<KalmanState> ksCaptor = ArgumentCaptor.forClass(KalmanState.class);
-        verify(mockRepository).upsertTagStatus(tsCaptor.capture());
-        verify(mockRepository).upsertKalmanState(ksCaptor.capture());
-
-        assertEquals("approaching", tsCaptor.getValue().state);
-        assertEquals(1, tsCaptor.getValue().sampleCount); // Reset for new pass
-        assertEquals(CURRENT_TIME_MS, tsCaptor.getValue().entryTimeMs);
-        assertEquals(DEFAULT_Q, ksCaptor.getValue().q, 0.0001f); // Kalman re-initialized with defaults
-        assertEquals(DEFAULT_R, ksCaptor.getValue().r, 0.0001f);
+        assertNull(result);
+        assertEquals(TagStatus.TagStatusState.APPROACHING, activeStatus.state);
     }
-
+    
     @Test
-    public void performLossSweep_tagTimesOut_marksLoggedAndDeletesKalman() {
-        TagStatus activeStatus = new TagStatus();
-        activeStatus.tagId = TEST_TAG_ID;
-        activeStatus.state = "here";
-        activeStatus.peakTimeMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS - 500; // Has a peak
-        activeStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS - 1; // Just timed out
+    public void processTagExit_alreadyLoggedTag_returnsNull() {
+        TagStatus loggedStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
+        loggedStatus.state = TagStatus.TagStatusState.LOGGED;
+        loggedStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS * 2;
 
-        when(mockRepository.allTagStatusesNow()).thenReturn(Collections.singletonList(activeStatus));
-        // No need to mock latestContextNow if gunTimeMs is not critical for this test's assertion
-
-        tagProcessor.performLossSweep(CURRENT_TIME_MS);
-
-        ArgumentCaptor<TagStatus> tsCaptor = ArgumentCaptor.forClass(TagStatus.class);
-        verify(mockRepository).upsertTagStatus(tsCaptor.capture());
-        verify(mockRepository).deleteKalmanStateByTagId(TEST_TAG_ID);
-
-        assertEquals("logged", tsCaptor.getValue().state);
+        TagStatus result = tagProcessor.processTagExit(loggedStatus, null, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
+        assertNull(result);
+        assertEquals(TagStatus.TagStatusState.LOGGED, loggedStatus.state);
     }
-
-    @Test
-    public void performLossSweep_activeTag_noChange() {
-        TagStatus activeStatus = new TagStatus();
-        activeStatus.tagId = TEST_TAG_ID;
-        activeStatus.state = "approaching";
-        activeStatus.peakTimeMs = CURRENT_TIME_MS - 100;
-        activeStatus.lastSeenMs = CURRENT_TIME_MS - 50; // Not timed out
-
-        when(mockRepository.allTagStatusesNow()).thenReturn(Collections.singletonList(activeStatus));
-
-        tagProcessor.performLossSweep(CURRENT_TIME_MS);
-
-        verify(mockRepository, never()).upsertTagStatus(any(TagStatus.class));
-        verify(mockRepository, never()).deleteKalmanStateByTagId(anyInt());
-    }
-
-     @Test
-    public void processSample_existingTagWithSpecificKalmanQR_usesPersistedQR() {
-        TagStatus existingStatus = new TagStatus();
-        existingStatus.tagId = TEST_TAG_ID;
-        existingStatus.state = "approaching";
-        existingStatus.sampleCount = 1;
-        existingStatus.peakRssi = -60f;
-        existingStatus.lastSeenMs = CURRENT_TIME_MS - 100;
-
-        float specificQ = 0.5f;
-        float specificR = 0.9f;
-        KalmanState existingKalman = new KalmanState(TEST_TAG_ID, specificQ, specificR, 0.02f, -60f, true);
-
-        when(mockRepository.getTagStatusNow(TEST_TAG_ID)).thenReturn(existingStatus);
-        when(mockRepository.getKalmanStateByTagIdSync(TEST_TAG_ID)).thenReturn(existingKalman);
-
-        tagProcessor.processSample(TEST_TAG_ID, -55, CURRENT_TIME_MS);
-
-        ArgumentCaptor<KalmanState> ksCaptor = ArgumentCaptor.forClass(KalmanState.class);
-        verify(mockRepository).upsertKalmanState(ksCaptor.capture());
-
-        assertEquals(specificQ, ksCaptor.getValue().q, 0.0001f); // Assert that the specific Q was used and persisted
-        assertEquals(specificR, ksCaptor.getValue().r, 0.0001f); // Assert that the specific R was used and persisted
-    }
-
 }

@@ -1,0 +1,88 @@
+ok we need to add some features and do a refactor.
+
+Here's the features i'd like to add.  if you remove code, please comment it out vs deleeting it so i can see the changes. I am going to turn on auto-accept of changes so you can go to down.  I am goign to step away while you do these changes.  Do not prompt me or paste code in the chat- mmake changes to the files. I will grant auto-accept. Rather than asking for clarifications as you go, make your best jusgement, but then at the end , list out changes you think i might want to make that you encountered and we can do those separately. I have opened all files in the editor so you can read them all
+
+
+1- settings. add a settings activity, with a button from the main activity to get there ( you can put it next to the debug button that's there now)
+this activity should provide a number of settings.  Each setting is a simple value.
+the settings should be stored in room-- using a settings table. this gives us future ability to have multiple settings. the columns of this table should be: ID, numeric,
+and then columns for the following: 
+   retain_samples ( boolean ) -- deafult false ( will explain why we need this below)
+   arrived_threshold (int) -- default - 50
+the app should automatically detect if these are missing, and set them to defaults that are constants in the Settings object you use -- 
+changing the settings on the settings page should save them to room AND make sure they take effect in the code ( more for next step )
+
+2. use setting arrived_threshold
+arrived_threshold should be used in TagProcessor to determine the point at which a runner's status goes from 'approaching' to 'here/arrived'.  Make sure when the settings activity changes it, that the change takes effect immedately. 
+
+3. add ability to store multiple instances of the same runner.  
+Sometimes, the course is a loop, and the same runner passes the same point multiple times.  We need to be able to track each of those.
+To do this, we need to do these changes:
+(a) add  public int trackID to TagStatus and associated DAOs.  this should be a unique number for each time a tag is tracked as it passes. when a 
+user aproaches, we should make a new tagstatus even if we have already seen that runner before. 
+(b) add an enumeration for state -- "approaching", "here", "logged"-- and change all code in the project to use those enumerations
+(c) update code to initiate a new TagStatus row each time a runner appears without an active row. essentially, the logic is: when a tag is visible, IF 
+there is a row matching that tagiD and its status is 'approaching" or 'here" use that row, otherwise, make a new one
+(d) add a convienience method on TagStatus isInProcess() to make the above logic easier to read and test
+
+4. add ability to store each sample
+this is for debugging purposes mainly. add a room table , dao, and entity object that represents a single sample. 
+the name should be TagData.  the colmns should be:
+  int trackingID ( FK to the TagStatus table)
+  long entryTimeMs ( the timestamp of the sample)
+  int rssi ( the sample rssi).
+
+then each callback that is one of our tags ( you'll see the logic that checks for devicename like 'PT-%' ), should write a new row
+into the TagData table.
+Make sure the writes to this table do not happen on the main ui thread.  Since we will be scanning constantly, set up a thread who's job is to write these rows.
+
+retain_samples determines what we do with the samples AFTER a TagStatus row is finished ( marked 'logged' ).  If 
+retain_samples is true, then the samples are not deleted. if false, then the rows are deleted after the peak is detected.
+Update he existing button on the debug screen delete data also deletes the content of TagData
+
+
+5. clean up tag status, use sample data when signal is lost
+the kalman filter and other analysis is really complex and hard to test. but more importantly, we do not really need 
+to do it every sample-- ultimately, the detemrination of whether we are at a peak or not can be done when we lose the 
+tracker signal. 
+That means we can remove the tag status fields that are used for updating the peack as we go:
+    estimatedRssi ( now we have all the samples in TagData )
+	sampleCount ( now we have TagData for that )
+	belowPeakCount ( part of the algorithm.
+
+We should elminate use of the KalmanFilter and Tagprocessor during sample colleciton-- the callback should simply write the 
+samples to TagData. ( on a non-ui thread). 
+We should use the KalmanFilter from Hippachus.  Since we are going to run the analysis at the end, we do not need to worry about thek
+kalman filter state. This means we can delete Files KalmanState, Kalman1D, KalmanStateDAo, and associated tests. reproduce materally the same logic 
+as is there now using Kalman filter from Hipparchus
+update the MainActivity to run the TagProcessor when a TagStatus row is completed. The TagProcessor's job is to update the TagStatus row-- 
+but do NOT design TagProcessor to reach out and update the DB. instead, it should return a TagStatus object, which the MainActivity then updates in thedb.
+this makes the TagProcessor unit testable.
+The TagProcessor should have a moethod called "Process Tag" that receives a TagStatus object ( which is what's in the db), and a List<TagData objects
+For now, make the TagProcessor code instantate a kalman filter, and then loop over the samples , running the existing code that currently runs when samples come in.
+In this way, we do not need to worry about saving KalmanState. That leads to the next change:
+
+After this work, BLeService is really just updating rows in the databse, and not doing any logic. The only time we do logic is when we detect we've lost signal from a tag. this is alraeady in a background thread, so the calculations in TagProcessor are safe to perform.
+The code to delete samples after analysis is complete ( if retain_samples is false) belongs in performSweepRunable not in TagProcessor.
+
+
+6. fix bugs with current MainActivity. the current code shows the right icon and status, but is missing other information.
+Modify the front page to add these things:
+(a) when approaching, we should show the pace time ( currenttime-guntime). this way, the user can see it counting up
+(b) when logged, show the final peakTimeMs - Guntime )-- this is the offical output
+(c) also show the time of the peakTime-- in format hh:mm:ss (local time). this way its easy to see when the samples came from.
+(d) show the peak RSSI
+This is most of the key data from the TagStatus table, 
+(e) make sure that new rows are added at the TOP-- and make sure to consider that with the canges above, ew will have multiple rows for the same user
+(f)make sure that new entries are added at the top, and that the view allows the user to scroll down to see the others.
+(g) add a label at the top of the recyler view that lists the total count of samples we have so far
+
+
+(7) Implement csv download button.
+add a new button on main activity that downloads the data we have collected.  For this purpose, we need to use tablesaw to keep the code clean.
+When the user selects download, we should do these steps:
+(1) stop scanning ble
+(2) use tablesaw to save the contents of TagStatus and TagData tables as csv. 
+(3) prompt user for where to download them 
+(4) the filename should be tagdata_mm-dd-yyyy-hh-mm-ss.csv and tagstatus_mm-dd-yyyy-hh-mm-ss.csv. (mm-dd-yyyy-hh-mm-ss is from the current time. this way new files are not overwritten. the time portion for the two files should match each other.
+(5) keep in mind that the user's next step is probably to upload this somewhere, so be creative and think about a way to make this easy for the user. esentialy, if you can make it easy for the user to find where these files are when they attach it to an upload form on a webpage, do that

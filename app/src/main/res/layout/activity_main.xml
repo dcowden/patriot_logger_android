@@ -1,5 +1,6 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -27,17 +28,38 @@
             android:textSize="14sp" />
 
         <Button
+            android:id="@+id/btnSettings"
+            style="?android:attr/buttonBarButtonStyle" 
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Settings"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
             android:id="@+id/btnDebug"
+            style="?android:attr/buttonBarButtonStyle" 
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Debug" />
     </LinearLayout>
 
+    <!-- Total Samples Count -->
+    <TextView
+        android:id="@+id/tvTotalSamples"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:text="Total Samples: 0"
+        android:textSize="12sp"
+        android:textStyle="italic" />
+
     <!-- Clock -->
     <TextView
         android:id="@+id/tvClock"
         android:layout_width="match_parent"
-        android:layout_height="319dp"
+        android:layout_height="280dp" 
         android:gravity="center"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"
@@ -46,30 +68,39 @@
         android:textStyle="bold"
         android:typeface="monospace" />
 
-    <!-- List -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recycler"
+    <!-- Log Fragment Container -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/log_fragment_container"
+        android:name="com.patriotlogger.logger.ui.LogFragment"
         android:layout_width="match_parent"
-        android:layout_height="153dp"
+        android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp" />
+        tools:layout="@layout/fragment_log" />
 
-    <!-- Upload / Start FAB-like Button -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnAction"
-        style="@style/Widget.Material3.Button.TonalButton"
+    <!-- Action Buttons -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnStop"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="384dp"
-        android:layout_height="5sp"
-        android:layout_marginStart="4dp"
-        android:layout_weight="1"
-        android:text="Stop"
-        android:visibility="visible" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAction"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start" 
+            android:layout_marginEnd="4dp"/>
+        
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDownload"
+            style="@style/Widget.Material3.Button.OutlinedButton" 
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Download CSV"
+            android:layout_marginStart="4dp"/>
+
+    </LinearLayout>
+
 </LinearLayout>

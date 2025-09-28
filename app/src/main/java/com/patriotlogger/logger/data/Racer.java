@@ -21,6 +21,7 @@ public class Racer {
     }
 
     // Your other constructor
+    @Ignore
     public Racer(int id, @NonNull String name, int splitAssignmentId) { // Added splitAssignmentId here too for completeness
         this.id = id;
         this.name = name;
