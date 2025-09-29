@@ -8,18 +8,30 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" tools:targetApi="s" /> <!-- add this if you want to drop Location on 12+ -->
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:targetApi="s"/>
 
-    <!-- Legacy support -->
+    <!-- Legacy (<= Android 11) -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+
+    <!-- Optional if you truly scan in background on 29–30; requires special consent flow -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" android:maxSdkVersion="30"/>
+
 
     <!-- Foreground service types -->
+    <!--<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>-->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
 
+    <!-- Android 13+ notifications for foreground service -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- WRITE_EXTERNAL_STORAGE for API 28 (P) and below for CSV saving -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <application
         android:allowBackup="true"

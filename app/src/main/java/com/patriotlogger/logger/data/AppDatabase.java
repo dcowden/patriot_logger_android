@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase;
 import androidx.room.TypeConverters;
 
 // Settings entity changed to single-row config, incremented version to 6
-@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, Setting.class, TagData.class}, version = 6) 
+@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, Setting.class, TagData.class}, version = 7)
 @TypeConverters({TagStatusStateConverter.class})
 public abstract class AppDatabase extends RoomDatabase {
     public abstract TagStatusDao tagStatusDao();

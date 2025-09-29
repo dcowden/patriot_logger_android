@@ -1,0 +1,276 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "2359213eb78e0e6becab54d21212f439",
+    "entities": [
+      {
+        "tableName": "tag_status",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `lowestRssi` REAL NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "friendlyName",
+            "columnName": "friendlyName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "entryTimeMs",
+            "columnName": "entryTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakTimeMs",
+            "columnName": "peakTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitTimeMs",
+            "columnName": "exitTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lowestRssi",
+            "columnName": "lowestRssi",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenMs",
+            "columnName": "lastSeenMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "trackId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tag_status_tagId_state",
+            "unique": false,
+            "columnNames": [
+              "tagId",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tag_status_tagId_state` ON `${TABLE_NAME}` (`tagId`, `state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "racers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `name` TEXT NOT NULL, `splitAssignmentId` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "splitAssignmentId",
+            "columnName": "splitAssignmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "RaceContext",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventName` TEXT, `raceName` TEXT, `raceId` INTEGER NOT NULL, `gunTimeMs` INTEGER NOT NULL, `splitAssignmentId` INTEGER NOT NULL, `splitName` TEXT, `authToken` TEXT, `baseUrl` TEXT, `createdAtMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventName",
+            "columnName": "eventName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "raceName",
+            "columnName": "raceName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "raceId",
+            "columnName": "raceId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gunTimeMs",
+            "columnName": "gunTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "splitAssignmentId",
+            "columnName": "splitAssignmentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "splitName",
+            "columnName": "splitName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "authToken",
+            "columnName": "authToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "baseUrl",
+            "columnName": "baseUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "settings_config",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `retain_samples` INTEGER, `arrived_threshold` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retain_samples",
+            "columnName": "retain_samples",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "arrived_threshold",
+            "columnName": "arrived_threshold",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "tag_data",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dataId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` INTEGER NOT NULL, `timestampMs` INTEGER NOT NULL, `rssi` INTEGER NOT NULL, FOREIGN KEY(`trackId`) REFERENCES `tag_status`(`trackId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "dataId",
+            "columnName": "dataId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampMs",
+            "columnName": "timestampMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rssi",
+            "columnName": "rssi",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "dataId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tag_data_trackId_timestampMs",
+            "unique": false,
+            "columnNames": [
+              "trackId",
+              "timestampMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tag_data_trackId_timestampMs` ON `${TABLE_NAME}` (`trackId`, `timestampMs`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tag_status",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "trackId"
+            ],
+            "referencedColumns": [
+              "trackId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2359213eb78e0e6becab54d21212f439')"
+    ]
+  }
+}

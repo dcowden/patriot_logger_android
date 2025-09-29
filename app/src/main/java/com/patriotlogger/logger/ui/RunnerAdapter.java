@@ -91,7 +91,7 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
                 h.icon.setImageDrawable(ContextCompat.getDrawable(context, R.drawable.img_approaching));
                 break;
             case HERE:
-                h.icon.setImageDrawable(ContextCompat.getDrawable(context, R.drawable.img_here));
+                h.icon.setImageDrawable(ContextCompat.getDrawable(context, R.drawable.img_herenow));
                 break;
             case LOGGED:
                 h.icon.setImageDrawable(ContextCompat.getDrawable(context, R.drawable.img_logged));

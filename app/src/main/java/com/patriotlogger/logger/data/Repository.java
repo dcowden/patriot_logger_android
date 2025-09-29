@@ -14,6 +14,8 @@ import androidx.room.Room;
 import androidx.room.RoomDatabase;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
+import com.patriotlogger.logger.R;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -31,6 +33,8 @@ public final class Repository {
 
 
     private Repository(Context ctx) {
+        // Initialize executor first, as callbacks might use it immediately
+        databaseWriteExecutor = Executors.newSingleThreadExecutor();
         db = Room.databaseBuilder(ctx.getApplicationContext(), AppDatabase.class, "psl.db")
                 .fallbackToDestructiveMigration()
                 .addCallback(new RoomDatabase.Callback() { // Callback to initialize settings
@@ -38,8 +42,10 @@ public final class Repository {
                     public void onCreate(@NonNull SupportSQLiteDatabase _db) {
                         super.onCreate(_db);
                         Log.i(TAG, "Database created. Initializing default settings.");
-                        // This runs on a Room background thread
-                        initializeDefaultSettingsInDbInternal();
+                        // Schedule the initialization on our executor.
+                        // This ensures that the main 'db' instance is fully ready
+                        // before initializeDefaultSettingsInDbInternal attempts to use its DAOs.
+                        databaseWriteExecutor.execute(Repository.this::initializeDefaultSettingsInDbInternal);
                     }
 
                     @Override
@@ -51,7 +57,7 @@ public final class Repository {
                     }
                 })
                 .build();
-        databaseWriteExecutor = Executors.newSingleThreadExecutor();
+
     }
 
     public static Repository get(@NonNull Context context) {
@@ -79,6 +85,7 @@ public final class Repository {
     private void initializeDefaultSettingsInDbInternal() {
         // This is called from Room's onCreate or onOpen(via executor)
         // No need for another executor.execute() here
+        Log.d(TAG, "initializeDefaultSettingsInDbInternal: Checking settings...");
         Setting currentDbSetting = db.settingDao().getConfigSync(Setting.SETTINGS_ID);
         if (currentDbSetting == null) {
             Setting defaultSetting = new Setting(); // Instantiates with defaults from Setting class
@@ -92,6 +99,7 @@ public final class Repository {
     }
 
     private void checkAndInitializeDefaultSettingsInternal() {
+        Log.d(TAG, "checkAndInitializeDefaultSettingsInternal: Checking settings...");
         // Called from onOpen
         Setting currentDbSetting = db.settingDao().getConfigSync(Setting.SETTINGS_ID);
         if (currentDbSetting == null) {
@@ -162,17 +170,25 @@ public final class Repository {
     public void upsertRaceContext(RaceContext c) {
         databaseWriteExecutor.execute(() -> db.raceContextDao().upsert(c));
     }
+
+    private RaceContext makeTemporaryNewRace(){
+        RaceContext ctx = new RaceContext();
+        ctx.raceName="TestRace";
+        ctx.eventName="TestEvent";
+        ctx.id=1;
+        return ctx;
+    }
     public void setGunTime(long gunTimeMs, @Nullable RepositoryVoidCallback callback) {
         databaseWriteExecutor.execute(() -> {
             try {
-                RaceContext ctx = db.raceContextDao().latestSync();
-                if (ctx != null) {
-                    ctx.gunTimeMs = gunTimeMs;
-                    db.raceContextDao().upsert(ctx);
-                    if (callback != null) mainThreadHandler.post(callback::onSuccess);
-                } else {
-                    if (callback != null) mainThreadHandler.post(() -> callback.onError(new IllegalStateException("No RaceContext found.")));
+                RaceContext ctx = null;
+                ctx = db.raceContextDao().latestSync();
+                if (ctx == null) {
+                    ctx = makeTemporaryNewRace();
                 }
+                ctx.gunTimeMs = gunTimeMs;
+                db.raceContextDao().upsert(ctx);
+                if (callback != null) mainThreadHandler.post(callback::onSuccess);
             } catch (Exception e) {
                 if (callback != null) mainThreadHandler.post(() -> callback.onError(e));
             }
@@ -190,9 +206,11 @@ public final class Repository {
      * It ensures default settings are initialized if they don't exist.
      */
     public LiveData<Setting> getLiveConfig() {
+
         // MediatorLiveData to ensure settings are initialized before emitting
         MediatorLiveData<Setting> mediatedLiveData = new MediatorLiveData<>();
         mediatedLiveData.addSource(areSettingsInitialized, initialized -> {
+            Log.d(TAG, "getLiveConfig: areSettingsInitialized changed to: " + initialized);
             if (Boolean.TRUE.equals(initialized)) {
                 // Now safe to get the actual live config
                 LiveData<Setting> actualLiveConfig = db.settingDao().getLiveConfig(Setting.SETTINGS_ID);
@@ -214,6 +232,7 @@ public final class Repository {
         });
         // Trigger initial check if not already done by Room callbacks
         if (areSettingsInitialized.getValue() == null || !areSettingsInitialized.getValue()) {
+            Log.d(TAG, "getLiveConfig: areSettingsInitialized is not true yet. Triggering check.");
             databaseWriteExecutor.execute(this::checkAndInitializeDefaultSettingsInternal);
         }
         return mediatedLiveData;
@@ -245,7 +264,7 @@ public final class Repository {
             }
         });
         // Trigger initial check if not already done
-        if (areSettingsInitialized.getValue() == null || !areSettingsInitialized.getValue()) {
+        if (areSettingsInitialized.getValue() == null || !Boolean.TRUE.equals(areSettingsInitialized.getValue())) {
             databaseWriteExecutor.execute(this::checkAndInitializeDefaultSettingsInternal);
         }
         return settingLiveData;
