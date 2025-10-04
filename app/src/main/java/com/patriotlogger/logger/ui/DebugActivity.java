@@ -18,6 +18,7 @@ public class DebugActivity extends AppCompatActivity {
 
     private DebugViewModel viewModel;
     private DebugInfoAdapter adapter;
+    private RecyclerView rvDebugData; // Make RecyclerView a class field
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -31,19 +32,19 @@ public class DebugActivity extends AppCompatActivity {
         Button btnClearRoom = findViewById(R.id.btnDebugClearRoom);
         Button btnCloseApp = findViewById(R.id.btnDebugCloseApp);
 
-        RecyclerView rvDebugData = findViewById(R.id.rvDebugData);
+        rvDebugData = findViewById(R.id.rvDebugData); // Initialize the class field
         rvDebugData.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new DebugInfoAdapter(); // The adapter is now for DebugTagData
+        adapter = new DebugInfoAdapter();
         rvDebugData.setAdapter(adapter);
 
         btnStartScan.setOnClickListener(v -> {
-            Intent svcIntent = new Intent(this, BleScannerService.class);
+            Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START);
             startService(svcIntent);
             Toast.makeText(this, "Start Scan command sent", Toast.LENGTH_SHORT).show();
         });
 
         btnStopScan.setOnClickListener(v -> {
-            Intent svcIntent = new Intent(this, BleScannerService.class);
+            Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP);
             stopService(svcIntent);
             Toast.makeText(this, "Stop Scan command sent", Toast.LENGTH_SHORT).show();
         });
@@ -57,12 +58,16 @@ public class DebugActivity extends AppCompatActivity {
             finishAffinity();
         });
 
-        // --- THIS IS THE KEY CHANGE ---
-        // Observe the new LiveData from the ViewModel
+        // Observe the LiveData from the ViewModel
         viewModel.getAllDebugTagData().observe(this, debugTagDataList -> {
             if (debugTagDataList != null) {
-                // Submit the list of DebugTagData to the updated adapter
-                adapter.submitList(debugTagDataList);
+                // Submit the list and provide a callback to scroll to the top.
+                adapter.submitList(debugTagDataList, () -> {
+                    // This runnable is executed after the list is diffed and updated.
+                    if (debugTagDataList.size() > 0) {
+                        rvDebugData.scrollToPosition(0);
+                    }
+                });
             }
         });
     }
