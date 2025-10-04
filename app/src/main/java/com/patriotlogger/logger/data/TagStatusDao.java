@@ -6,7 +6,7 @@ import androidx.room.Insert;
 import androidx.room.OnConflictStrategy; // Keep this if used by insert/update
 import androidx.room.Query;
 import androidx.room.Update;
-
+import android.util.Log;
 import java.util.List;
 
 @Dao
@@ -14,7 +14,9 @@ public interface TagStatusDao {
 
     // --- Write Operations (Synchronous - to be called from Repository's background executor) ---
     @Insert
-    long insertSync(TagStatus tagStatus);@Update
+    long insertSync(TagStatus tagStatus);
+
+    @Update
     void updateSync(TagStatus tagStatus);
 
     // This default upsert will be called by Repository's upsertTagStatus,
@@ -39,10 +41,20 @@ public interface TagStatusDao {
     // which is already on a background thread.
     default long upsertSync(TagStatus tagStatus) {
         if (tagStatus.trackId == 0) {
-            return insertSync(tagStatus); // Returns the new rowId (which should be trackId)
+            long s = System.currentTimeMillis();
+
+            Log.d("TagStatusDao", "Insert existing with trackId: " + tagStatus.trackId + ", lastSeenMs=" + tagStatus.lastSeenMs+ " dt=" +  (System.currentTimeMillis() - s));
+            long r =  insertSync(tagStatus); // Returns the new rowId (which should be trackId)
+            Log.d("TagStatusDao", "Done");
+            return r;
         } else {
+
+            long s = System.currentTimeMillis();
             updateSync(tagStatus);
-            return tagStatus.trackId; // Return existing trackId on update
+            Log.d("TagStatusDao", "Updating existing TagStatus with trackId: " + tagStatus.trackId + ", lastSeenMs=" + tagStatus.lastSeenMs + " dt=" +  (System.currentTimeMillis() - s));
+            long r = tagStatus.trackId; // Return existing trackId on update
+            Log.d("TagStatusDao", "Done");
+            return r;
         }
     }
 

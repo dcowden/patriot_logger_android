@@ -34,26 +34,25 @@ public class TagProcessor {
                                    int rssi,
                                    long nowMs,
                                    int arrivedThreshold) {
-        // Caller is responsible for providing a fully initialized statusToProcess.
+        // Caller is responsible for providing a fully initialized statusToProcess
         // Initialization logic (new pass, friendly name) is handled by the caller.
-
-        statusToProcess.lastSeenMs = nowMs;
-        // exitTimeMs is continuously updated to lastSeenMs until the pass is LOGGED.
-        // If the pass is already LOGGED, this method shouldn't ideally be called for that pass's status.
-        if (statusToProcess.state != TagStatus.TagStatusState.LOGGED) {
-            statusToProcess.exitTimeMs = nowMs; 
+        if ( statusToProcess.state == TagStatus.TagStatusState.FIRST_SAMPLE){
+            Log.d(TAG, "processSample: Tag " + statusToProcess.tagId + "first_sammple->approaching"     );
+            statusToProcess.state = TagStatus.TagStatusState.APPROACHING;
         }
+        statusToProcess.lastSeenMs = nowMs;
+        Log.d(TAG, "processSample: Tag " + statusToProcess.tagId +
+                " (trackId: " + statusToProcess.trackId + ") RSSI: " + rssi + " threshold=" + arrivedThreshold );
 
-        if (rssi < statusToProcess.lowestRssi) {
-            statusToProcess.lowestRssi = rssi;
+        statusToProcess.exitTimeMs = nowMs;
+        if (rssi > statusToProcess.highestRssi) {
+            statusToProcess.highestRssi = rssi;
         }
 
         if (statusToProcess.state == TagStatus.TagStatusState.APPROACHING) {
             if (rssi >= arrivedThreshold) {
                 statusToProcess.state = TagStatus.TagStatusState.HERE;
-                Log.d(TAG, "processSample: Tag " + statusToProcess.tagId + 
-                           " (trackId: " + statusToProcess.trackId + ") -> HERE. RSSI: " + rssi + 
-                           " >= Threshold: " + arrivedThreshold);
+
             }
         }
         return statusToProcess;
@@ -74,16 +73,15 @@ public class TagProcessor {
                                     @Nullable List<TagData> samplesForPass, 
                                     long currentTimeMs, 
                                     long lossTimeoutMs) {
-        
-        if (!statusToProcess.isInProcess()) { 
-            return null; 
-        }
 
         if ((currentTimeMs - statusToProcess.lastSeenMs) >= lossTimeoutMs) {
+            Log.d(TAG,"Process Exit--start");
             statusToProcess.state = TagStatus.TagStatusState.LOGGED;
             statusToProcess.exitTimeMs = statusToProcess.lastSeenMs; 
             Log.d(TAG, "processTagExit: Tag " + statusToProcess.tagId + 
-                       " (trackId: " + statusToProcess.trackId + ") -> LOGGED due to loss timeout.");
+                       " (trackId: " + statusToProcess.trackId + ") -> LOGGED due to loss timeout., currentTimeMs=" +
+                    currentTimeMs + ", lastSeenMs=" + statusToProcess.lastSeenMs
+                    + ", lossTimeoutMs=" + lossTimeoutMs + " actualCurrentTimeMillis = " + System.currentTimeMillis() );
 
             if (samplesForPass != null && !samplesForPass.isEmpty()) {
                 TagData peakSample = null;
@@ -106,6 +104,7 @@ public class TagProcessor {
                 statusToProcess.peakTimeMs = statusToProcess.lastSeenMs; 
                 Log.w(TAG, "processTagExit: No TagData samples for trackId: " + statusToProcess.trackId + ". Defaulting peakTimeMs.");
             }
+            Log.d(TAG,"Process Exit--end");
             return statusToProcess;
         }
         return null; 

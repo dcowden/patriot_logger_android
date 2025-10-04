@@ -12,7 +12,7 @@ public class Setting {
     public int id = SETTINGS_ID; // Use the constant for the single settings row
 
     public Boolean retain_samples = true; 
-    public Integer arrived_threshold = -60;
+    public Integer arrived_threshold = -50;
 
     public static final boolean DEFAULT_RETAIN_SAMPLES = false;
     public static final int DEFAULT_ARRIVED_THRESHOLD = -70; // Example default RSSI

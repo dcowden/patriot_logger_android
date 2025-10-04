@@ -16,6 +16,7 @@ public class TagStatus {
      * Represents the processing state of a BLE tag during a specific pass.
      */
     public enum TagStatusState {
+        FIRST_SAMPLE, // First sample received for this pass
         APPROACHING, // Tag is detected and moving towards the peak signal strength point.
         HERE,        // Tag is at or very near the peak signal strength point.
         LOGGED       // Tag has passed the peak point and is no longer actively tracked for this pass, or signal lost.
@@ -31,10 +32,10 @@ public class TagStatus {
     public long peakTimeMs = 0L;  // Timestamp of the peak RSSI sample, to be calculated when pass is logged
     public long exitTimeMs = 0L;  // Timestamp of the last sample for this pass
 
-    public float lowestRssi = 100f; // Lowest raw RSSI seen during this pass
+    public float highestRssi = -500f; // Lowest raw RSSI seen during this pass
 
     @NonNull
-    public TagStatusState state = TagStatusState.APPROACHING;
+    public TagStatusState state = TagStatusState.FIRST_SAMPLE;
 
     public long lastSeenMs = 0L; // Timestamp of the last sample processed for this specific trackId
 
@@ -47,12 +48,12 @@ public class TagStatus {
         this.entryTimeMs = entryTimeMs;
         this.lastSeenMs = entryTimeMs;
         this.state = initialState;
-        this.lowestRssi = 100f; // Initialize to a high value
+        this.highestRssi = -500f; // Initialize to a high value
         // peakTimeMs will be set upon logging the pass
     }
 
     public boolean isInProcess() {
-        return this.state == TagStatusState.APPROACHING || this.state == TagStatusState.HERE;
+        return this.state != TagStatusState.LOGGED;
     }
 
     @NonNull
@@ -67,7 +68,7 @@ public class TagStatus {
                ", peakTimeMs=" + peakTimeMs +
                ", exitTimeMs=" + exitTimeMs +
                ", lastSeenMs=" + lastSeenMs +
-               ", lowestRssi=" + lowestRssi +
+               ", lowestRssi=" + highestRssi +
                '}';
     }
 }

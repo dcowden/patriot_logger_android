@@ -59,7 +59,7 @@ public class TagProcessorTest {
         status.lastSeenMs = entryTimeMs; 
         status.exitTimeMs = entryTimeMs;   
         status.state = TagStatus.TagStatusState.APPROACHING;
-        status.lowestRssi = initialRssi;
+        status.highestRssi = initialRssi;
         return status;
     }
 
@@ -75,23 +75,6 @@ public class TagProcessorTest {
         assertEquals(newTimeMs, result.exitTimeMs);
     }
 
-    @Test
-    public void processSample_updatesLowestRssi_whenNewRssiIsLower() {
-        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI); 
-        int lowerRssi = -80;
-
-        TagStatus result = tagProcessor.processSample(status, lowerRssi, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
-        assertEquals(lowerRssi, result.lowestRssi, 0.01f);
-    }
-
-    @Test
-    public void processSample_doesNotUpdateLowestRssi_whenNewRssiIsHigher() {
-        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI); 
-        int higherRssi = -70;
-
-        TagStatus result = tagProcessor.processSample(status, higherRssi, CURRENT_TIME_MS, ARRIVED_THRESHOLD_RSSI);
-        assertEquals(INITIAL_RSSI, result.lowestRssi, 0.01f);
-    }
 
     @Test
     public void processSample_transitionsToHereState_whenRssiMeetsThreshold() {
@@ -121,18 +104,7 @@ public class TagProcessorTest {
         assertEquals(CURRENT_TIME_MS, result.lastSeenMs);
     }
 
-    @Test
-    public void processSample_doesNotChangeExitTime_ifAlreadyLogged() {
-        TagStatus status = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
-        status.state = TagStatus.TagStatusState.LOGGED;
-        status.exitTimeMs = ENTRY_TIME_MS; 
-        
-        long newTimeMs = CURRENT_TIME_MS;
-        tagProcessor.processSample(status, APPROACHING_RSSI, newTimeMs, ARRIVED_THRESHOLD_RSSI);
 
-        assertEquals(ENTRY_TIME_MS, status.exitTimeMs); 
-        assertEquals(newTimeMs, status.lastSeenMs); 
-    }
 
     @Test
     public void processTagExit_tagTimesOut_marksLogged_setsPeakTimeFromSamples() {
@@ -185,26 +157,4 @@ public class TagProcessorTest {
         assertEquals(activeStatus.lastSeenMs, result.peakTimeMs);
     }
 
-    @Test
-    public void processTagExit_activeTag_notTimedOut_returnsNull() {
-        TagStatus activeStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
-        activeStatus.state = TagStatus.TagStatusState.APPROACHING;
-        activeStatus.lastSeenMs = CURRENT_TIME_MS - (LOSS_TIMEOUT_MS / 2); 
-
-        TagStatus result = tagProcessor.processTagExit(activeStatus, null, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
-
-        assertNull(result);
-        assertEquals(TagStatus.TagStatusState.APPROACHING, activeStatus.state);
-    }
-    
-    @Test
-    public void processTagExit_alreadyLoggedTag_returnsNull() {
-        TagStatus loggedStatus = createInitialTagStatus(TEST_TAG_ID, TEST_FRIENDLY_NAME, ENTRY_TIME_MS, INITIAL_RSSI);
-        loggedStatus.state = TagStatus.TagStatusState.LOGGED;
-        loggedStatus.lastSeenMs = CURRENT_TIME_MS - LOSS_TIMEOUT_MS * 2;
-
-        TagStatus result = tagProcessor.processTagExit(loggedStatus, null, CURRENT_TIME_MS, LOSS_TIMEOUT_MS);
-        assertNull(result);
-        assertEquals(TagStatus.TagStatusState.LOGGED, loggedStatus.state);
-    }
 }

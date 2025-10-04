@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 7,
-    "identityHash": "2359213eb78e0e6becab54d21212f439",
+    "identityHash": "6272877dd1ebde26184622d6289913d5",
     "entities": [
       {
         "tableName": "tag_status",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `lowestRssi` REAL NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `highestRssi` REAL NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -44,8 +44,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "lowestRssi",
-            "columnName": "lowestRssi",
+            "fieldPath": "highestRssi",
+            "columnName": "highestRssi",
             "affinity": "REAL",
             "notNull": true
           },
@@ -270,7 +270,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2359213eb78e0e6becab54d21212f439')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6272877dd1ebde26184622d6289913d5')"
     ]
   }
 }

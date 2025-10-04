@@ -38,7 +38,7 @@ public class DebugInfoAdapter extends ListAdapter<TagStatus, DebugInfoAdapter.Vi
                        oldItem.peakTimeMs == newItem.peakTimeMs &&
                        oldItem.exitTimeMs == newItem.exitTimeMs &&
                        oldItem.lastSeenMs == newItem.lastSeenMs &&
-                       oldItem.lowestRssi == newItem.lowestRssi;
+                       oldItem.highestRssi == newItem.highestRssi;
             }
         });
     }
@@ -72,7 +72,7 @@ public class DebugInfoAdapter extends ListAdapter<TagStatus, DebugInfoAdapter.Vi
             sb.append(String.format(Locale.US, "TrackID: %d, TagID: %d, Name: %s\n",
                     status.trackId, status.tagId, status.friendlyName != null ? status.friendlyName : "N/A"));
             sb.append(String.format(Locale.US, "  State: %s, LowestRSSI: %.1f\n",
-                    status.state.name(), status.lowestRssi)); // Use TagStatus.TagStatusState
+                    status.state.name(), status.highestRssi)); // Use TagStatus.TagStatusState
             sb.append(String.format(Locale.US, "  Entry: %s\n  Peak:  %s\n  Exit:  %s\n  Last:  %s",
                     formatTime(status.entryTimeMs),
                     formatTime(status.peakTimeMs),

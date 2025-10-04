@@ -62,7 +62,7 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
         TagStatus s = differ.getCurrentList().get(pos);
 
         String namePart = (s.friendlyName != null && !s.friendlyName.isEmpty()) ? s.friendlyName : "Device";
-        String displayName = String.format(Locale.getDefault(), "%s (#%d P:%d)", namePart, s.tagId, s.trackId);
+        String displayName = String.format(Locale.getDefault(), "%s (%d)", namePart, s.trackId);
         h.name.setText(displayName);
 
         h.status.setText(s.state.name()); // This should still work as s.state is now TagStatus.TagStatusState

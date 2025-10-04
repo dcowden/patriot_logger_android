@@ -137,8 +137,8 @@ public class UploadWorker extends Worker {
             rj.addProperty("peak_time", s.peakTimeMs);
             rj.addProperty("exit_time", s.exitTimeMs);
 
-            rj.addProperty("peak_rssi", s.lowestRssi); // Assuming this should be peak_rssi, not s.lowestRssi twice
-            rj.addProperty("lowest_rssi", s.lowestRssi);
+            rj.addProperty("peak_rssi", s.highestRssi); // Assuming this should be peak_rssi, not s.lowestRssi twice
+            rj.addProperty("lowest_rssi", s.highestRssi);
 
             List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(s.trackId); // Call DAO sync method
             int sampleCount = (samples != null) ? samples.size() : 0;
