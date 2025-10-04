@@ -1,106 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
+    android:orientation="vertical">
 
-    <!-- Header -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorPrimary"
+        app:title="Patriot Logger"
+        app:titleTextColor="@android:color/white" />
+
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="75sp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="12dp"
+        tools:context=".ui.MainActivity">
 
-        <ImageView
-            android:layout_width="75sp"
-            android:layout_height="match_parent"
-            android:src="@drawable/patriot_logo" />
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="75sp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
+            <ImageView
+                android:layout_width="75sp"
+                android:layout_height="match_parent"
+                android:src="@drawable/patriot_logo" />
+
+            <TextView
+                android:id="@+id/tvHeader"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="8dp"
+                android:text="Event • Race • Split • Group"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnSettings"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="Settings" />
+
+            <Button
+                android:id="@+id/btnDebug"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Debug" />
+        </LinearLayout>
+
+        <!-- Total Samples Count -->
         <TextView
-            android:id="@+id/tvHeader"
-            android:layout_width="0dp"
+            android:id="@+id/tvTotalSamples"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="Total Samples: 0"
+            android:textSize="12sp"
+            android:textStyle="italic" />
+
+        <!-- Clock -->
+        <TextView
+            android:id="@+id/tvClock"
+            android:layout_width="match_parent"
+            android:layout_height="223dp"
+            android:gravity="center"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="--:--"
+            android:textSize="64sp"
+            android:textStyle="bold"
+            android:typeface="monospace" />
+
+        <!-- Log Fragment Container -->
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/log_fragment_container"
+            android:name="com.patriotlogger.logger.ui.LogFragment"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:paddingStart="8dp"
-            android:text="Event • Race • Split • Group"
-            android:textSize="14sp" />
+            tools:layout="@layout/fragment_log" />
 
-        <Button
-            android:id="@+id/btnSettings"
-            style="?android:attr/buttonBarButtonStyle" 
-            android:layout_width="wrap_content"
+        <!-- Action Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Settings"
-            android:layout_marginEnd="8dp"/>
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/btnDebug"
-            style="?android:attr/buttonBarButtonStyle" 
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Debug" />
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAction"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:text="Start" />
 
-    <!-- Total Samples Count -->
-    <TextView
-        android:id="@+id/tvTotalSamples"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:text="Total Samples: 0"
-        android:textSize="12sp"
-        android:textStyle="italic" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDownload"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="Download CSV" />
 
-    <!-- Clock -->
-    <TextView
-        android:id="@+id/tvClock"
-        android:layout_width="match_parent"
-        android:layout_height="223dp"
-        android:gravity="center"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:text="--:--"
-        android:textSize="64sp"
-        android:textStyle="bold"
-        android:typeface="monospace" />
-
-    <!-- Log Fragment Container -->
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/log_fragment_container"
-        android:name="com.patriotlogger.logger.ui.LogFragment"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        tools:layout="@layout/fragment_log" />
-
-    <!-- Action Buttons -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAction"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Start" 
-            android:layout_marginEnd="4dp"/>
-        
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnDownload"
-            style="@style/Widget.Material3.Button.OutlinedButton" 
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Download CSV"
-            android:layout_marginStart="4dp"/>
+        </LinearLayout>
 
     </LinearLayout>
-
 </LinearLayout>

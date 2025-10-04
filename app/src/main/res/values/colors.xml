@@ -25,6 +25,10 @@
     <color name="status_here">#2196F3</color>
     <color name="status_logged">#4CAF50</color>
 
+    <!-- Toolbar Status Colors -->
+    <color name="status_scanning_green">#4CAF50</color>
+    <color name="status_paused_red">#F44336</color>
+
     <!-- Action Colors -->
     <color name="green">#4CAF50</color>
     <color name="orange">#FF9800</color>
