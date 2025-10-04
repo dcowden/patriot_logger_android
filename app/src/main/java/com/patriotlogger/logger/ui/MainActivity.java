@@ -134,8 +134,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             }
         });
 
-        repository.getTotalSamplesCount().observe(this, count -> {
-            tvTotalSamples.setText(String.format(Locale.getDefault(), "Total Samples: %d", (count != null) ? count : 0));
+        repository.getTotalDataCount().observe(this, count -> {
+            tvTotalSamples.setText(String.format(Locale.getDefault(), "Captured: %d Tags, %d pings ", count.tagCount,count.sampleCount));
         });
 
         btnAction.setOnClickListener(v -> onActionButtonClicked());
@@ -443,7 +443,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                     // Use a Snackbar for a richer, modern notification
                     // We need a root view from the layout, like a CoordinatorLayout or even the root FrameLayout.
                     // findViewById(android.R.id.content) is a reliable way to get the root view.
-                    Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content), finalMessage, Snackbar.LENGTH_LONG);
+                    Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content), finalMessage, Snackbar.LENGTH_INDEFINITE);
                     snackbar.setAction("DISMISS", view -> {
                         // The action is simply to dismiss the snackbar, so the click listener can be empty.
                     });

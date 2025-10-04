@@ -75,6 +75,35 @@ public final class Repository {
         return db.tagDataDao().liveGetAllTagData();
     }
 
+    public LiveData<DataCount> getTotalDataCount(){
+        MediatorLiveData<DataCount> mediatorLiveData = new MediatorLiveData<>();
+        LiveData<Integer> samplesCountSource = db.tagDataDao().getTotalSamplesCount();
+        LiveData<Integer> statusesSource = db.tagStatusDao().getStatusSampleCount();
+
+        // 3. Add the first source to the mediator
+        mediatorLiveData.addSource(samplesCountSource, count -> {
+            // This lambda is called when the sample count changes.
+            Integer currentStatuses = statusesSource.getValue();
+            // We need to check if the other source has emitted a value yet.
+            if (currentStatuses != null) {
+                mediatorLiveData.setValue(new DataCount(count, 1));
+            }
+        });
+
+        // 4. Add the second source to the mediator
+        mediatorLiveData.addSource(statusesSource, statuses -> {
+            // This lambda is called when the tag status list changes.
+            Integer currentSampleCount = samplesCountSource.getValue();
+            // We need to check if the other source has emitted a value yet.
+            if (currentSampleCount != null) {
+                mediatorLiveData.setValue(new DataCount(currentSampleCount,1));
+            }
+        });
+
+        // 5. Return the mediator. The ViewModel will observe this single source.
+        return mediatorLiveData;
+
+    }
     public LiveData<Integer> getTotalSamplesCount() {
         return db.tagDataDao().getTotalSamplesCount();
     }

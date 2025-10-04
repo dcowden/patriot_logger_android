@@ -27,8 +27,8 @@ public class DebugActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(DebugViewModel.class);
 
-        Button btnStartScan = findViewById(R.id.btnDebugStartScan);
-        Button btnStopScan = findViewById(R.id.btnDebugStopScan);
+        //Button btnStartScan = findViewById(R.id.btnDebugStartScan);
+        //Button btnStopScan = findViewById(R.id.btnDebugStopScan);
         Button btnClearRoom = findViewById(R.id.btnDebugClearRoom);
         Button btnCloseApp = findViewById(R.id.btnDebugCloseApp);
 
@@ -38,6 +38,8 @@ public class DebugActivity extends AppCompatActivity {
         adapter = new DebugInfoAdapter();
         rvDebugData.setAdapter(adapter);
 
+        /*
+        removed these because they get out of sync with the front page anyway.
         btnStartScan.setOnClickListener(v -> {
             Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START);
             startService(svcIntent);
@@ -49,7 +51,7 @@ public class DebugActivity extends AppCompatActivity {
             stopService(svcIntent);
             Toast.makeText(this, "Stop Scan command sent", Toast.LENGTH_SHORT).show();
         });
-
+        */
         btnClearRoom.setOnClickListener(v -> {
             viewModel.clearAllRoomData();
             Toast.makeText(this, "Clear Room Data command sent", Toast.LENGTH_SHORT).show();

@@ -8,34 +8,11 @@
     <!-- Top Control Panel (approx 25%) -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="5dp"
-        android:layout_weight=".15"
+        android:layout_height="69dp"
+        android:layout_weight="0"
         android:gravity="center_horizontal"
         android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDebugStartScan"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_margin="4dp"
-                android:layout_weight="1"
-                android:text="Start Scan" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDebugStopScan"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_margin="4dp"
-                android:layout_weight="1"
-                android:text="Stop Scan" />
-        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

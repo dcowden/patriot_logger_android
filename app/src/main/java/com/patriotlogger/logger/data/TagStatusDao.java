@@ -63,6 +63,8 @@ public interface TagStatusDao {
 
 
     // --- Read Operations (Returning LiveData - Room handles background execution) ---
+    @Query("SELECT COUNT(*) from tag_status;")
+    LiveData<Integer> getStatusSampleCount();
 
     @Query("SELECT * FROM tag_status ORDER BY trackId DESC")
     LiveData<List<TagStatus>> liveAll(); // You already had this - good!
