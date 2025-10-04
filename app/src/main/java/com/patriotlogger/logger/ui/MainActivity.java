@@ -444,7 +444,9 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                     // We need a root view from the layout, like a CoordinatorLayout or even the root FrameLayout.
                     // findViewById(android.R.id.content) is a reliable way to get the root view.
                     Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content), finalMessage, Snackbar.LENGTH_LONG);
-
+                    snackbar.setAction("DISMISS", view -> {
+                        // The action is simply to dismiss the snackbar, so the click listener can be empty.
+                    });
                     // Set the text color based on the overall result
                     if (finalSuccessCount == totalFiles) {
                         // All successful: Green text

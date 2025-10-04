@@ -19,7 +19,7 @@ public class DebugActivity extends AppCompatActivity {
     private DebugViewModel viewModel;
     private DebugInfoAdapter adapter;
     private RecyclerView rvDebugData; // Make RecyclerView a class field
-
+    private LinearLayoutManager layoutManager; // Store layout manager as a field
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -33,7 +33,8 @@ public class DebugActivity extends AppCompatActivity {
         Button btnCloseApp = findViewById(R.id.btnDebugCloseApp);
 
         rvDebugData = findViewById(R.id.rvDebugData); // Initialize the class field
-        rvDebugData.setLayoutManager(new LinearLayoutManager(this));
+        layoutManager = new LinearLayoutManager(this);
+        rvDebugData.setLayoutManager(layoutManager);
         adapter = new DebugInfoAdapter();
         rvDebugData.setAdapter(adapter);
 
@@ -58,13 +59,16 @@ public class DebugActivity extends AppCompatActivity {
             finishAffinity();
         });
 
-        // Observe the LiveData from the ViewModel
         viewModel.getAllDebugTagData().observe(this, debugTagDataList -> {
             if (debugTagDataList != null) {
-                // Submit the list and provide a callback to scroll to the top.
+                // Check if the user is currently at the top of the list
+                boolean isAtTop = layoutManager.findFirstCompletelyVisibleItemPosition() == 0;
+
+                // Submit the list and provide a callback
                 adapter.submitList(debugTagDataList, () -> {
                     // This runnable is executed after the list is diffed and updated.
-                    if (debugTagDataList.size() > 0) {
+                    // Only scroll to the top if the user was already there.
+                    if (isAtTop && debugTagDataList.size() > 0) {
                         rvDebugData.scrollToPosition(0);
                     }
                 });
