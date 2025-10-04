@@ -78,25 +78,26 @@ public final class Repository {
     public LiveData<DataCount> getTotalDataCount(){
         MediatorLiveData<DataCount> mediatorLiveData = new MediatorLiveData<>();
         LiveData<Integer> samplesCountSource = db.tagDataDao().getTotalSamplesCount();
-        LiveData<Integer> statusesSource = db.tagStatusDao().getStatusSampleCount();
+        LiveData<Integer> statusesCountSource = db.tagStatusDao().getStatusSampleCount();
 
-        // 3. Add the first source to the mediator
-        mediatorLiveData.addSource(samplesCountSource, count -> {
+        mediatorLiveData.addSource(samplesCountSource, sampleCount -> {
             // This lambda is called when the sample count changes.
-            Integer currentStatuses = statusesSource.getValue();
+            // Get the latest value from the other source.
+            Integer currentStatusesCount = statusesCountSource.getValue();
             // We need to check if the other source has emitted a value yet.
-            if (currentStatuses != null) {
-                mediatorLiveData.setValue(new DataCount(count, 1));
+            if (currentStatusesCount != null) {
+                mediatorLiveData.setValue(new DataCount(sampleCount, currentStatusesCount));
             }
         });
 
-        // 4. Add the second source to the mediator
-        mediatorLiveData.addSource(statusesSource, statuses -> {
-            // This lambda is called when the tag status list changes.
+        // 4. Add the second source (status count) to the mediator.
+        mediatorLiveData.addSource(statusesCountSource, statusCount -> {
+            // This lambda is called when the tag status count changes.
+            // Get the latest value from the other source.
             Integer currentSampleCount = samplesCountSource.getValue();
             // We need to check if the other source has emitted a value yet.
             if (currentSampleCount != null) {
-                mediatorLiveData.setValue(new DataCount(currentSampleCount,1));
+                mediatorLiveData.setValue(new DataCount(currentSampleCount, statusCount));
             }
         });
 

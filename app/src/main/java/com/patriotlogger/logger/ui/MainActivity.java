@@ -135,7 +135,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         });
 
         repository.getTotalDataCount().observe(this, count -> {
-            tvTotalSamples.setText(String.format(Locale.getDefault(), "Captured: %d Tags, %d pings ", count.tagCount,count.sampleCount));
+            tvTotalSamples.setText(String.format(Locale.getDefault(), "Captured: %d Splits, %d pings ", count.tagCount,count.sampleCount));
         });
 
         btnAction.setOnClickListener(v -> onActionButtonClicked());
@@ -266,7 +266,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                     long diff = now - MainActivity.this.gunTimeMs;
                     long m = (diff / 1000) / 60;
                     long s = (diff / 1000) % 60;
-                    tvClock.setText(String.format(Locale.getDefault(), "%d:%02d%s", m, s, isScanningActive ? "" : " Scanning \n(Paused)"));
+                    tvClock.setText(String.format(Locale.getDefault(), "%d:%02d", m, s));
                 } else {
                     tvClock.setText("--:--");
                 }
