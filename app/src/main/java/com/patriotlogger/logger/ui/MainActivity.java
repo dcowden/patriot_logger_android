@@ -26,6 +26,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.google.android.material.snackbar.Snackbar;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -57,6 +58,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 import pub.devrel.easypermissions.AfterPermissionGranted;
 import pub.devrel.easypermissions.EasyPermissions;
@@ -324,15 +326,64 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         updateButtonStates();
     }
 
+    private boolean generateAndSaveCsv(String fileName, String fileContent) {
+
+        boolean success = false;
+
+        Log.d(TAG + "_CSV", "Attempting to save file: " + fileName);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Use MediaStore for Android 10 (Q) and above (Scoped Storage)
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "text/csv");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    try (OutputStream outputStream = getContentResolver().openOutputStream(uri)) {
+                        if (outputStream != null) {
+                            outputStream.write(fileContent.getBytes(StandardCharsets.UTF_8));
+                            success = true;
+                        }
+                    }
+                } else {
+                    Log.e(TAG + "_CSV", "MediaStore URI was null for " + fileName);
+                }
+            } else {
+                // Use legacy file paths for Android 9 (P) and below
+                File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
+                    Log.e(TAG + "_CSV", "Failed to create Downloads directory.");
+                    // No need for a return here, let it fail and show the toast at the end.
+                }
+                File file = new File(downloadsDir, fileName);
+                try (FileOutputStream fos = new FileOutputStream(file)) {
+                    fos.write(fileContent.getBytes(StandardCharsets.UTF_8));
+                    success = true;
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG + "_CSV", "IOException writing CSV file " + fileName, e);
+        } catch (SecurityException se) {
+            Log.e(TAG + "_CSV", "SecurityException writing CSV file " + fileName, se);
+        }
+        return success;
+
+    }
+
     private void onDownloadCsvClicked() {
+        // Check for storage permission once before starting any downloads on older versions.
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             if (!EasyPermissions.hasPermissions(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                Toast.makeText(this, "Storage permission is required to save CSV.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Storage permission is required to save CSV files.", Toast.LENGTH_LONG).show();
+                // Optionally, you could request the permission here again.
                 return;
             }
         }
 
-        Toast.makeText(this, "Generating CSV...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Generating CSV files...", Toast.LENGTH_SHORT).show();
 
         executorService.execute(() -> {
             AppDatabase db = repository.getDatabase();
@@ -340,6 +391,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             TagDataDao tagDataDao = db.tagDataDao();
             RaceContextDao raceContextDao = db.raceContextDao();
 
+            // Fetch data once for all reports
             List<TagStatus> tagStatuses = tagStatusDao.getAllSync();
             List<TagData> allTagData = tagDataDao.getAllTagDataSync();
             RaceContext currentContext = raceContextDao.latestSync();
@@ -352,60 +404,69 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                 }
             }
 
-            String csvData = CsvExporter.generateCsvString(tagStatuses, samplesByTrackId, currentGunTimeMs);
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
-            String fileName = "patriot_logger_" + sdf.format(new Date()) + ".csv";
-            boolean success = false;
+            List<CsvExporter.CsvFile> files_to_download = CsvExporter.generateCsvFiles(tagStatuses,allTagData);
+            StringBuilder snackbarText = new StringBuilder();
+            String successEmoji = "✅ ";
+            String failureEmoji = "❌ ";
+            int successCount = 0;
 
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ContentValues values = new ContentValues();
-                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
-                    values.put(MediaStore.MediaColumns.MIME_TYPE, "text/csv");
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                    Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                    if (uri != null) {
-                        try (OutputStream outputStream = getContentResolver().openOutputStream(uri)) {
-                            if (outputStream != null) {
-                                outputStream.write(csvData.getBytes(StandardCharsets.UTF_8));
-                                success = true;
-                            }
-                        }
-                    } else {
-                        Log.e(TAG + "_CSV", "MediaStore URI was null.");
-                    }
-                } else {
-                    File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                    if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
-                        Log.e(TAG + "_CSV", "Failed to create Downloads directory.");
-                        mainThreadHandler.post(() -> {
-                            if (!isFinishing() && !isDestroyed())
-                                Toast.makeText(MainActivity.this, "Failed to create Downloads directory.", Toast.LENGTH_SHORT).show();
-                        });
-                        return;
-                    }
-                    File file = new File(downloadsDir, fileName);
-                    try (FileOutputStream fos = new FileOutputStream(file)) {
-                        fos.write(csvData.getBytes(StandardCharsets.UTF_8));
-                        success = true;
-                    }
+            for ( CsvExporter.CsvFile f: files_to_download){
+                boolean success = generateAndSaveCsv(f.filename,f.content);
+                if ( success ){
+                    successCount++;
+                    // Prepend the success emoji to the success message
+                    snackbarText.append(successEmoji)
+                            .append(f.filename)
+                            .append(" (")
+                            .append(f.rowCount)
+                            .append(" rows)\n");
                 }
-            } catch (IOException e) {
-                Log.e(TAG + "_CSV", "Error writing CSV file", e);
-            } catch (SecurityException se) {
-                Log.e(TAG + "_CSV", "Security Exception writing CSV file", se);
+                else{
+                    // Prepend the failure emoji to the failure message
+                    snackbarText.append(failureEmoji)
+                            .append("Failed: ")
+                            .append(f.filename)
+                            .append("\n");
+                }
+            }
+// Remove the last newline character for cleaner display
+            if (snackbarText.length() > 0) {
+                snackbarText.setLength(snackbarText.length() - 1);
             }
 
-            final boolean finalSuccess = success;
+            final String finalMessage = snackbarText.toString();
+            final int finalSuccessCount = successCount;
+            final int totalFiles = files_to_download.size();
+
             mainThreadHandler.post(() -> {
                 if (!isFinishing() && !isDestroyed()) {
-                    if (finalSuccess) {
-                        Toast.makeText(MainActivity.this, "CSV saved to Downloads: " + fileName, Toast.LENGTH_LONG).show();
+                    // Use a Snackbar for a richer, modern notification
+                    // We need a root view from the layout, like a CoordinatorLayout or even the root FrameLayout.
+                    // findViewById(android.R.id.content) is a reliable way to get the root view.
+                    Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content), finalMessage, Snackbar.LENGTH_LONG);
+
+                    // Set the text color based on the overall result
+                    if (finalSuccessCount == totalFiles) {
+                        // All successful: Green text
+                        snackbar.setTextColor(getColor(R.color.success_green)); // Define this color in colors.xml
+                    } else if (finalSuccessCount == 0 && totalFiles > 0) {
+                        // All failed: Red text
+                        snackbar.setTextColor(getColor(R.color.failure_red));   // Define this color in colors.xml
                     } else {
-                        Toast.makeText(MainActivity.this, "Failed to save CSV.", Toast.LENGTH_SHORT).show();
+                        // Mixed result: Default text color
                     }
+
+                    // To show a multi-line message, we need to access the TextView inside the Snackbar
+                    TextView snackbarTextView = snackbar.getView().findViewById(com.google.android.material.R.id.snackbar_text);
+                    if (snackbarTextView != null) {
+                        snackbarTextView.setMaxLines(5); // Allow up to 5 lines
+                    }
+
+                    snackbar.show();
                 }
             });
+
+
         });
     }
 

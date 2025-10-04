@@ -48,4 +48,6 @@
     <!-- Notification Colors -->
     <color name="notification_icon">#1976D2</color>
     <color name="stateLogged"></color>
+    <color name="success_green">#4CAF50</color>
+    <color name="failure_red">#F44336</color>
 </resources>

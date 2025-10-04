@@ -1,7 +1,6 @@
 package com.patriotlogger.logger.ui;
 
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.Toast;
@@ -34,33 +33,36 @@ public class DebugActivity extends AppCompatActivity {
 
         RecyclerView rvDebugData = findViewById(R.id.rvDebugData);
         rvDebugData.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new DebugInfoAdapter();
+        adapter = new DebugInfoAdapter(); // The adapter is now for DebugTagData
         rvDebugData.setAdapter(adapter);
 
         btnStartScan.setOnClickListener(v -> {
-            Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START);
-            startForegroundService(svcIntent);
+            Intent svcIntent = new Intent(this, BleScannerService.class);
+            startService(svcIntent);
             Toast.makeText(this, "Start Scan command sent", Toast.LENGTH_SHORT).show();
         });
 
         btnStopScan.setOnClickListener(v -> {
-            Intent svcIntent = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP);
-            startForegroundService(svcIntent); // Or stopService(svcIntent) if appropriate
+            Intent svcIntent = new Intent(this, BleScannerService.class);
+            stopService(svcIntent);
             Toast.makeText(this, "Stop Scan command sent", Toast.LENGTH_SHORT).show();
         });
 
         btnClearRoom.setOnClickListener(v -> {
-            viewModel.clearAllRoomData(); // Corrected method name
+            viewModel.clearAllRoomData();
             Toast.makeText(this, "Clear Room Data command sent", Toast.LENGTH_SHORT).show();
         });
 
         btnCloseApp.setOnClickListener(v -> {
-            finishAffinity(); // Closes all activities in this task
+            finishAffinity();
         });
 
-        viewModel.getAllTagStatuses().observe(this, tagStatuses -> {
-            if (tagStatuses != null) {
-                adapter.submitList(tagStatuses);
+        // --- THIS IS THE KEY CHANGE ---
+        // Observe the new LiveData from the ViewModel
+        viewModel.getAllDebugTagData().observe(this, debugTagDataList -> {
+            if (debugTagDataList != null) {
+                // Submit the list of DebugTagData to the updated adapter
+                adapter.submitList(debugTagDataList);
             }
         });
     }

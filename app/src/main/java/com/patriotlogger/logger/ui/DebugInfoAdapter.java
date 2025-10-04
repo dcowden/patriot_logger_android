@@ -1,5 +1,6 @@
 package com.patriotlogger.logger.ui;
 
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -8,37 +9,29 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.patriotlogger.logger.R;
-// Import TagStatus which now contains TagStatusState
-import com.patriotlogger.logger.data.TagStatus;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import com.patriotlogger.logger.data.DebugTagData;
+
 import java.util.Locale;
-import java.util.Objects;
 
-public class DebugInfoAdapter extends ListAdapter<TagStatus, DebugInfoAdapter.ViewHolder> {
-
-    private static final SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
+public class DebugInfoAdapter extends ListAdapter<DebugTagData, DebugInfoAdapter.ViewHolder> {
 
     public DebugInfoAdapter() {
-        super(new DiffUtil.ItemCallback<TagStatus>() {
+        super(new DiffUtil.ItemCallback<DebugTagData>() {
             @Override
-            public boolean areItemsTheSame(@NonNull TagStatus oldItem, @NonNull TagStatus newItem) {
-                // trackId is the unique key for a pass
-                return oldItem.trackId == newItem.trackId;
+            public boolean areItemsTheSame(@NonNull DebugTagData oldItem, @NonNull DebugTagData newItem) {
+                // Use the unique dataId for the most efficient comparison
+                return oldItem.dataId == newItem.dataId;
             }
 
             @Override
-            public boolean areContentsTheSame(@NonNull TagStatus oldItem, @NonNull TagStatus newItem) {
-                return oldItem.trackId == newItem.trackId && // Should be same if items are same
+            public boolean areContentsTheSame(@NonNull DebugTagData oldItem, @NonNull DebugTagData newItem) {
+                // If items are the same, check if contents have changed.
+                return oldItem.trackId == newItem.trackId &&
                        oldItem.tagId == newItem.tagId &&
-                       oldItem.state.equals( newItem.state)  && // Enum comparison is fine
-                       (Objects.equals(oldItem.friendlyName, newItem.friendlyName)) &&
-                       oldItem.entryTimeMs == newItem.entryTimeMs &&
-                       oldItem.peakTimeMs == newItem.peakTimeMs &&
-                       oldItem.exitTimeMs == newItem.exitTimeMs &&
-                       oldItem.lastSeenMs == newItem.lastSeenMs &&
-                       oldItem.highestRssi == newItem.highestRssi;
+                       oldItem.timestampMs == newItem.timestampMs &&
+                       oldItem.rssi == newItem.rssi;
             }
         });
     }
@@ -53,7 +46,7 @@ public class DebugInfoAdapter extends ListAdapter<TagStatus, DebugInfoAdapter.Vi
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        TagStatus item = getItem(position);
+        DebugTagData item = getItem(position);
         if (item != null) {
             holder.bind(item);
         }
@@ -65,25 +58,24 @@ public class DebugInfoAdapter extends ListAdapter<TagStatus, DebugInfoAdapter.Vi
         ViewHolder(View view) {
             super(view);
             tvInfo = view.findViewById(R.id.tvDebugItemInfo);
+            // Set a smaller font size for compactness
+            tvInfo.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         }
 
-        void bind(TagStatus status) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format(Locale.US, "TrackID: %d, TagID: %d, Name: %s\n",
-                    status.trackId, status.tagId, status.friendlyName != null ? status.friendlyName : "N/A"));
-            sb.append(String.format(Locale.US, "  State: %s, LowestRSSI: %.1f\n",
-                    status.state.name(), status.highestRssi)); // Use TagStatus.TagStatusState
-            sb.append(String.format(Locale.US, "  Entry: %s\n  Peak:  %s\n  Exit:  %s\n  Last:  %s",
-                    formatTime(status.entryTimeMs),
-                    formatTime(status.peakTimeMs),
-                    formatTime(status.exitTimeMs),
-                    formatTime(status.lastSeenMs)));
-            tvInfo.setText(sb.toString());
-        }
+        void bind(DebugTagData item) {
+            // Chop off the first 7 digits of the timestamp for a more compact display
+            String timestampStr = String.valueOf(item.timestampMs);
+            String compactTimestamp = timestampStr.length() > 7 ? timestampStr.substring(7) : timestampStr;
 
-        private String formatTime(long timeMs) {
-            if (timeMs == 0L) return "--:--:--.---";
-            return sdf.format(new Date(timeMs));
+            // Format the string to display the 5 required columns, with dataId first.
+            String displayText = String.format(Locale.US,
+                    "id:%d trk:%d dev:%s ts:%s rssi:%d",
+                    item.dataId,
+                    item.trackId,
+                    item.getDeviceName(),
+                    compactTimestamp,
+                    item.rssi);
+            tvInfo.setText(displayText);
         }
     }
 }

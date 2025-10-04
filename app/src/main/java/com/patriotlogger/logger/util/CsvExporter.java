@@ -3,67 +3,117 @@ package com.patriotlogger.logger.util;
 import com.patriotlogger.logger.data.TagData;
 import com.patriotlogger.logger.data.TagStatus;
 
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
+/**
+ * Generates two separate CSV files from TagStatus and TagData lists.
+ * Headers are manually defined for stability and clarity.
+ */
 public class CsvExporter {
 
-    private static final String CSV_HEADER = "track_id,tag_id,friendly_name,pass_state,pass_entry_time_ms,pass_peak_time_ms,pass_exit_time_ms,pass_lowest_rssi,split_time_ms,sample_timestamp_ms,sample_rssi";
+    // --- Manually define headers here ---
+    private static final String SPLITS_CSV_HEADER = "trackId,tagId,friendlyName,state,entryTimeMs,peakTimeMs,exitTimeMs,highestRssi";
+    private static final String DATA_CSV_HEADER = "dataId,trackId,tagId,timestampMs,rssi";
 
     /**
-     * Generates a CSV string from TagStatus and TagData.
-     * Each row in the CSV represents one TagData sample, with associated TagStatus info repeated.
-     *
-     * @param tagStatuses      List of TagStatus objects (typically all logged passes).
-     * @param samplesByTrackId A map where the key is trackId and value is a list of TagData samples for that track.
-     * @param gunTimeMs        The gun time in milliseconds, used to calculate split times.
-     * @return A string representing the CSV data.
+     * A data class to hold the results of a CSV generation for a single file.
      */
-    public static String generateCsvString(List<TagStatus> tagStatuses, Map<Integer, List<TagData>> samplesByTrackId, long gunTimeMs) {
-        StringBuilder csvBuilder = new StringBuilder();
-        csvBuilder.append(CSV_HEADER).append("\n");
+    public static class CsvFile {
+        public final String filename;
+        public final String content;
+        public final int rowCount;
 
-        if (tagStatuses == null || samplesByTrackId == null) {
-            return csvBuilder.toString(); // Return header only if data is null
+        CsvFile(String filename, String content, int rowCount) {
+            this.filename = filename;
+            this.content = content;
+            this.rowCount = rowCount;
+        }
+    }
+
+    /**
+     * Generates CSV data for both TagStatus (splits) and TagData (samples).
+     *
+     * @param statuses The list of TagStatus objects to export.
+     * @param data     The list of TagData objects to export.
+     * @return A list containing two CsvFile objects, one for splits and one for data.
+     */
+    public static List<CsvFile> generateCsvFiles(List<TagStatus> statuses, List<TagData> data) {
+        List<CsvFile> files = new ArrayList<>();
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+
+        // Generate Splits (TagStatus) CSV
+        String splitsFilename = "patriotlogger_splits_" + timestamp + ".csv";
+        String splitsContent = generateSplitsCsv(statuses);
+        int splitsRowCount = (statuses != null) ? statuses.size() : 0;
+        files.add(new CsvFile(splitsFilename, splitsContent, splitsRowCount));
+
+        // Generate Data (TagData) CSV
+        String dataFilename = "patriotlogger_data_" + timestamp + ".csv";
+        String dataContent = generateDataCsv(data);
+        int dataRowCount = (data != null) ? data.size() : 0;
+        files.add(new CsvFile(dataFilename, dataContent, dataRowCount));
+
+        return files;
+    }
+
+    /**
+     * Generates the CSV string for TagStatus data.
+     */
+    private static String generateSplitsCsv(List<TagStatus> statuses) {
+        StringBuilder csvBuilder = new StringBuilder();
+        csvBuilder.append(SPLITS_CSV_HEADER).append("\n");
+
+        if (statuses == null || statuses.isEmpty()) {
+            return csvBuilder.toString(); // Return header only
         }
 
-        for (TagStatus status : tagStatuses) {
-            List<TagData> samples = samplesByTrackId.get(status.trackId);
-            if (samples == null || samples.isEmpty()) {
-                // If retain_samples was false, or no samples for this pass, skip or add a single line for status?
-                // Current interpretation: Only include rows for actual samples.
-                // If you want to include TagStatus even without samples, this part needs adjustment.
-                continue; 
-            }
-
-            String friendlyName = status.friendlyName != null ? status.friendlyName : "";
-            // Sanitize friendlyName: replace commas with semicolons and remove newlines for basic CSV safety.
-            friendlyName = friendlyName.replace(",", ";").replace("\n", " ");
-
-            String passState = status.state != null ? status.state.name() : "UNKNOWN";
-            
-            long splitTimeMs = 0;
-            if (status.peakTimeMs > 0 && gunTimeMs > 0) {
-                splitTimeMs = status.peakTimeMs - gunTimeMs;
-            } else {
-                splitTimeMs = 0; // Or some other indicator for undefined split
-            }
-
-            for (TagData sample : samples) {
-                csvBuilder.append(status.trackId).append(",");
-                csvBuilder.append(status.tagId).append(",");
-                csvBuilder.append(friendlyName).append(",");
-                csvBuilder.append(passState).append(",");
-                csvBuilder.append(status.entryTimeMs).append(",");
-                csvBuilder.append(status.peakTimeMs).append(",");
-                csvBuilder.append(status.exitTimeMs).append(",");
-                csvBuilder.append(String.format(Locale.US, "%.2f", status.highestRssi)).append(",");
-                csvBuilder.append(splitTimeMs).append(",");
-                csvBuilder.append(sample.timestampMs).append(",");
-                csvBuilder.append(sample.rssi).append("\n");
-            }
+        for (TagStatus status : statuses) {
+            csvBuilder.append(status.trackId).append(",");
+            csvBuilder.append(status.tagId).append(",");
+            csvBuilder.append(sanitize(status.friendlyName)).append(",");
+            csvBuilder.append(status.state != null ? status.state.name() : "").append(",");
+            csvBuilder.append(status.entryTimeMs).append(",");
+            csvBuilder.append(status.peakTimeMs).append(",");
+            csvBuilder.append(status.exitTimeMs).append(",");
+            csvBuilder.append(status.highestRssi).append("\n");
         }
         return csvBuilder.toString();
+    }
+
+    /**
+     * Generates the CSV string for TagData.
+     */
+    private static String generateDataCsv(List<TagData> data) {
+        StringBuilder csvBuilder = new StringBuilder();
+        csvBuilder.append(DATA_CSV_HEADER).append("\n");
+
+        if (data == null || data.isEmpty()) {
+            return csvBuilder.toString(); // Return header only
+        }
+
+        for (TagData sample : data) {
+            csvBuilder.append(sample.dataId).append(",");
+            csvBuilder.append(sample.trackId).append(",");
+            csvBuilder.append(sample.timestampMs).append(",");
+            csvBuilder.append(sample.rssi).append("\n");
+        }
+        return csvBuilder.toString();
+    }
+
+    /**
+     * A simple CSV sanitizer for string fields.
+     * If a string contains a comma or a double quote, it will be enclosed in double quotes,
+     * and any existing double quotes will be escaped by doubling them.
+     */
+    private static String sanitize(String s) {
+        if (s == null) return "";
+        if (s.contains(",") || s.contains("\"")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
     }
 }
