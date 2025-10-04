@@ -38,8 +38,8 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
         splitMillisFormat.setTimeZone(TimeZone.getTimeZone("UTC")); 
     }
 
-    public void submitList(List<TagStatus> list) {
-        differ.submitList(list);
+    public void submitList(List<TagStatus> list,Runnable commitCallback) {
+        differ.submitList(list,commitCallback);
     }
 
     public void setGunTime(long gunTimeMs) {
@@ -67,11 +67,6 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
 
         h.status.setText(s.state.name()); // This should still work as s.state is now TagStatus.TagStatusState
 
-        if (s.lastSeenMs > 0) {
-            h.lastSeen.setText(String.format("Seen: %s", timeFormat.format(new Date(s.lastSeenMs))));
-        } else {
-            h.lastSeen.setText("Seen: N/A");
-        }
 
         // Updated to use TagStatus.TagStatusState
         if (s.state == TagStatus.TagStatusState.LOGGED && s.peakTimeMs > 0 && gunTimeMs > 0) {
@@ -113,7 +108,6 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
         TextView name;
         TextView status;
         TextView split;
-        TextView lastSeen; 
 
         VH(@NonNull View v) {
             super(v);
@@ -121,7 +115,7 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
             name = v.findViewById(R.id.tvName);
             status = v.findViewById(R.id.tvStatus);
             split = v.findViewById(R.id.tvSplit);
-            lastSeen = v.findViewById(R.id.tvLastSeen); 
+
         }
     }
 

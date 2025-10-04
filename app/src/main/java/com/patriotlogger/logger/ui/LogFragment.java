@@ -37,6 +37,8 @@ public class LogFragment extends Fragment {
     private Repository repository;
     private RaceContext currentObservedRaceContext; // To hold the latest observed context for dialogs
 
+    private LinearLayoutManager layoutManager;
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -55,14 +57,22 @@ public class LogFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         recyclerView = view.findViewById(R.id.rvLogEntries);
-        recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
+        layoutManager = new LinearLayoutManager(getContext());
+        recyclerView.setLayoutManager(layoutManager);
         runnerAdapter = new RunnerAdapter(requireContext());
         recyclerView.setAdapter(runnerAdapter);
+        recyclerView.setAnimation(null);
 
         // Use the new LiveData method from Repository
         repository.getAllTagStatuses().observe(getViewLifecycleOwner(), statuses -> {
-            if (statuses != null) {
-                runnerAdapter.submitList(statuses);
+            if (statuses != null && layoutManager != null) {
+                boolean isAtTop = layoutManager.findFirstCompletelyVisibleItemPosition() == 0;
+
+                runnerAdapter.submitList(statuses, () -> {
+                    if ( isAtTop && !statuses.isEmpty()) {
+                        recyclerView.scrollToPosition(0);
+                    }
+                });
             }
         });
 

@@ -312,7 +312,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             }
         }
 
-        Toast.makeText(this, "Generating CSV files...", Toast.LENGTH_SHORT).show();
+        //Toast.makeText(this, "Generating CSV files...", Toast.LENGTH_SHORT).show();
 
         executorService.execute(() -> {
             AppDatabase db = repository.getDatabase();
