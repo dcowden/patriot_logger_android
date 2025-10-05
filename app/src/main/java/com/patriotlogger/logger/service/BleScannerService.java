@@ -55,6 +55,7 @@ public class BleScannerService extends Service {
     public static final String ACTION_START = "com.patriotlogger.logger.START_SCAN";
     public static final String ACTION_STOP = "com.patriotlogger.logger.STOP_SCAN";
 
+    public static final String TAG_PREFIX = "Patriot";
     private static final String CHANNEL_ID = "scan_channel";
     private static final int NOTIF_ID = 1001;
 
@@ -255,11 +256,12 @@ public class BleScannerService extends Service {
 
     @Nullable
     private Integer getTagIdIfShouldHandle(ScanRecord sr) {
+        //TODO: super brittle. and also should use manufacturer ADV data
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
-        if (deviceName != null && deviceName.startsWith("PT-")) {
+        if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
             try {
-                return Integer.parseInt(deviceName.substring(3));
+                return Integer.parseInt(deviceName.substring(TAG_PREFIX.length() + 1));
             } catch (NumberFormatException e) {
                 Log.w(TAG_SERVICE, "Failed to parse tagId from deviceName: " + deviceName, e);
                 return null;
@@ -306,7 +308,7 @@ public class BleScannerService extends Service {
                     statusToProcess.friendlyName = friendlyName;
                 }
             }
-            statusToProcess.friendlyName = "PT-" + tagId;
+            statusToProcess.friendlyName = TAG_PREFIX + "-" + tagId;
             Log.d(TAG_SERVICE, "Update tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
             statusToProcess.lastSeenMs = nowMs;
 
