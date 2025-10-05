@@ -65,7 +65,7 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
         String displayName = String.format(Locale.getDefault(), "%s (%d)", namePart, s.trackId);
         h.name.setText(displayName);
 
-        h.status.setText(s.state.name() + " (" + s.highestRssi + ")"); // This should still work as s.state is now TagStatus.TagStatusState
+        h.status.setText(s.state.name() + " (" + s.peakRssi + ")"); // This should still work as s.state is now TagStatus.TagStatusState
 
 
 

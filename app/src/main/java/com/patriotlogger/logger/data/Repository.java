@@ -14,6 +14,8 @@ import androidx.room.Room;
 import androidx.room.RoomDatabase;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
+import com.patriotlogger.logger.util.ThrottledLiveData;
+
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,6 +65,14 @@ public final class Repository {
         return db.tagDataDao().liveGetAllDebugTagData();
     }
 
+    public LiveData<List<TagData>> getLiveAllTagDataDesc() {
+        return db.tagDataDao().liveGetAllTagDataDesc();
+    }
+
+    public LiveData<List<TagData>> getThrottledLiveAllTagDataDesc(long throttleMs) {
+        return new ThrottledLiveData<>(db.tagDataDao().liveGetAllTagDataDesc(), throttleMs);
+    }
+
     public void insertTagData(TagData tagData) {
         databaseWriteExecutor.execute(() -> db.tagDataDao().insert(tagData));
     }
@@ -81,27 +91,19 @@ public final class Repository {
         LiveData<Integer> statusesCountSource = db.tagStatusDao().getStatusSampleCount();
 
         mediatorLiveData.addSource(samplesCountSource, sampleCount -> {
-            // This lambda is called when the sample count changes.
-            // Get the latest value from the other source.
             Integer currentStatusesCount = statusesCountSource.getValue();
-            // We need to check if the other source has emitted a value yet.
             if (currentStatusesCount != null) {
                 mediatorLiveData.setValue(new DataCount(sampleCount, currentStatusesCount));
             }
         });
 
-        // 4. Add the second source (status count) to the mediator.
         mediatorLiveData.addSource(statusesCountSource, statusCount -> {
-            // This lambda is called when the tag status count changes.
-            // Get the latest value from the other source.
             Integer currentSampleCount = samplesCountSource.getValue();
-            // We need to check if the other source has emitted a value yet.
             if (currentSampleCount != null) {
                 mediatorLiveData.setValue(new DataCount(currentSampleCount, statusCount));
             }
         });
 
-        // 5. Return the mediator. The ViewModel will observe this single source.
         return mediatorLiveData;
 
     }
@@ -147,6 +149,10 @@ public final class Repository {
 
     public LiveData<List<TagStatus>> getAllTagStatuses() {
         return db.tagStatusDao().liveAll();
+    }
+
+    public LiveData<List<TagStatus>> getThrottledAllTagStatuses(long throttleMs) {
+        return new ThrottledLiveData<>(db.tagStatusDao().liveAll(), throttleMs);
     }
 
     public LiveData<TagStatus> getTagStatusByTrackId(int trackId) {

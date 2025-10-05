@@ -19,14 +19,14 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper; // For posting to main thread if LiveData observeForever is used directly
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
-import androidx.lifecycle.Observer;   // For observing settings
+import androidx.lifecycle.Observer;
 
 import com.patriotlogger.logger.R;
 import com.patriotlogger.logger.data.AppDatabase;
@@ -35,13 +35,12 @@ import com.patriotlogger.logger.data.RaceContextDao;
 import com.patriotlogger.logger.data.Racer;
 import com.patriotlogger.logger.data.RacerDao;
 import com.patriotlogger.logger.data.Repository;
-import com.patriotlogger.logger.data.Setting; // Import Setting
+import com.patriotlogger.logger.data.Setting;
 import com.patriotlogger.logger.data.TagData;
 import com.patriotlogger.logger.data.TagDataDao;
 import com.patriotlogger.logger.data.TagStatus;
 import com.patriotlogger.logger.data.TagStatusDao;
 import com.patriotlogger.logger.logic.TagProcessor;
-// SettingsManager is removed
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +53,7 @@ public class BleScannerService extends Service {
 
     public static final String ACTION_START = "com.patriotlogger.logger.START_SCAN";
     public static final String ACTION_STOP = "com.patriotlogger.logger.STOP_SCAN";
+
 
     public static final String TAG_PREFIX = "Patriot";
     private static final String CHANNEL_ID = "scan_channel";
@@ -78,14 +78,17 @@ public class BleScannerService extends Service {
     private TagProcessor tagProcessor;
 
     // To hold current settings values, fetched from Repository
-    private volatile int currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD; // Default
-    private volatile boolean currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;   // Default
+    private volatile int currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD;
+    private volatile int currentApproachingThreshold = Setting.DEFAULT_APPROACHING_THRESHOLD;
+    private volatile float currentRssiAveragingAlpha = Setting.DEFAULT_RSSI_AVERAGING_ALPHA;
+    private volatile boolean currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;
+    private volatile Setting currentSettings =new Setting();
+    private volatile long  currentTagCooldownMs = 5000L;
+    private volatile  long abandonedTagTimeoutMs = 5000L;
 
-    // prevent accessing the same tag at the same time
     private final Map<Integer, Object> tagLockMap = new ConcurrentHashMap<>();
-
     private final Map<Integer, TagStatus.TagStatusState> lastNotifiedStateForTrack = new ConcurrentHashMap<>();
-    private Observer<Setting> settingsObserver; // To remove observer later
+    private Observer<Setting> settingsObserver;
 
 
     @Override
@@ -105,29 +108,20 @@ public class BleScannerService extends Service {
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
 
-
-        // Fetch initial settings and observe for changes
-        // Settings are needed on the worker thread, but LiveData observation needs a Looper.
-        // We can observeForever and post updates to our volatile fields.
         settingsObserver = setting -> {
             if (setting != null) {
-                Log.i(TAG_SERVICE, "Settings updated: Threshold=" + setting.arrived_threshold + ", Retain=" + setting.retain_samples);
-                currentArrivedThreshold = setting.arrived_threshold;
-                currentRetainSamples = setting.retain_samples;
-            } else {
-                // This might happen if DB is cleared and defaults haven't repopulated LiveData yet.
-                // Fallback to defaults. Repository's getLiveConfig should handle initialization.
-                Log.w(TAG_SERVICE, "Received null settings from LiveData, using defaults.");
-                currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD;
-                currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;
+                this.currentSettings = setting;
+                Log.d(TAG_SERVICE, "BLE Service Updating New Settings: setting");
+                //currentArrivedThreshold = setting.arrived_threshold;
+                //currentApproachingThreshold = setting.approaching_threshold;
+                //currentRssiAveragingAlpha = setting.rssi_averaging_alpha;
+                //currentRetainSamples = setting.retain_samples;
             }
         };
-        // LiveData needs to be observed from a thread with a Looper.
-        // The service's main thread is fine for observeForever.
+
         new Handler(Looper.getMainLooper()).post(() ->
                 repository.getLiveConfig().observeForever(settingsObserver)
         );
-
 
         createChannel();
         startForeground(NOTIF_ID, buildNotif("Scanner Initializing..."));
@@ -155,7 +149,6 @@ public class BleScannerService extends Service {
         super.onDestroy();
         stopScan();
         if (settingsObserver != null) {
-            // Remove observer from the same thread it was added
             new Handler(Looper.getMainLooper()).post(() ->
                     repository.getLiveConfig().removeObserver(settingsObserver)
             );
@@ -192,7 +185,7 @@ public class BleScannerService extends Service {
             return;
         }
 
-        ScanSettings scanSettings = new ScanSettings.Builder() // Renamed variable
+        ScanSettings scanSettings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                 .setReportDelay(REPORT_DELAY_MS)
@@ -232,6 +225,7 @@ public class BleScannerService extends Service {
             }
             scanner = null;
         }
+
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -256,7 +250,6 @@ public class BleScannerService extends Service {
 
     @Nullable
     private Integer getTagIdIfShouldHandle(ScanRecord sr) {
-        //TODO: super brittle. and also should use manufacturer ADV data
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
         if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
@@ -281,59 +274,75 @@ public class BleScannerService extends Service {
         Log.d(TAG_SERVICE, "Finished posting to queu for tagId: " + tagId );
     }
 
-    // This method runs on the 'worker' HandlerThread
     private void processRawSample(int tagId, int rssi, long nowMs) {
-
         Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
         synchronized (tagLock){
             TagStatus statusToProcess;
+            //this results in creating a new tag status if one is not in process.
             TagStatus currentKnownStatus = tagStatusDao.getActiveStatusForTagIdSync(tagId);
             Racer racer = racerDao.getSync(tagId);
             String friendlyName = (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
 
+            //THIS LOGIC IS REALLY GROSS-- NEED TO REFACTOR
             if (currentKnownStatus == null) {
+
+                TagStatus lastLoggedStatus = tagStatusDao.getLastLoggedForTagId(tagId);
+
+                if ( lastLoggedStatus != null ){
+                    //means we have logged this already-- check if it is within the cooldown window
+                    boolean isWithinCooldown = (nowMs - lastLoggedStatus.lastSeenMs) < currentTagCooldownMs;
+                    if (isWithinCooldown){
+                        Log.d(TAG_SERVICE, "tagId: " + tagId + " is within cooldown. Ignoring..");
+                        return;
+                    }
+                }
+                if ( rssi < currentSettings.approaching_threshold){
+                    Log.d(TAG_SERVICE, "Tag is not visible -- below approaching threshold" + currentSettings.approaching_threshold);
+                    return;
+                }
                 statusToProcess = new TagStatus();
                 statusToProcess.tagId = tagId;
                 statusToProcess.entryTimeMs = nowMs;
                 statusToProcess.state = TagStatus.TagStatusState.FIRST_SAMPLE;
-                statusToProcess.highestRssi = (float) rssi;
+                statusToProcess.peakRssi = (float) rssi;
+                statusToProcess.emaRssi = (float) rssi; // Initialize EMA with the first value
                 if (friendlyName != null) {
                     statusToProcess.friendlyName = friendlyName;
                 }
                 Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
             } else {
                 statusToProcess = currentKnownStatus;
-                if ((statusToProcess.friendlyName == null || statusToProcess.friendlyName.isEmpty()) &&
-                        (friendlyName != null && !friendlyName.isEmpty())) {
-                    statusToProcess.friendlyName = friendlyName;
-                }
             }
             statusToProcess.friendlyName = TAG_PREFIX + "-" + tagId;
             Log.d(TAG_SERVICE, "Update tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
             statusToProcess.lastSeenMs = nowMs;
 
-            // Use the cached settings values
-            int arrivedThreshold = this.currentArrivedThreshold;
+
             Log.d(TAG_SERVICE,"Start processSample");
             TagStatus processedStatus = tagProcessor.processSample(
                     statusToProcess,
-                    rssi,
-                    nowMs,
-                    arrivedThreshold
+                    currentSettings,rssi,
+                    nowMs
             );
-            Log.d(TAG_SERVICE,"End processSample");
-            processedStatus.trackId = (int) tagStatusDao.upsertSync(processedStatus);
-            handleProcessingSideEffects(processedStatus, nowMs, rssi);
-        }
 
+            if ( processedStatus.state == TagStatus.TagStatusState.LOGGED){
+                if (!currentSettings.retain_samples) {
+                    Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + processedStatus.trackId);
+                    tagDataDao.deleteSamplesForTrackIdSync(processedStatus.trackId);
+                }
+            }
+            processedStatus.trackId = (int) tagStatusDao.upsertSync(processedStatus);
+
+            if (processedStatus.trackId != 0 && processedStatus.isInProcess() && currentSettings.retain_samples) {
+                TagData newSample = new TagData(processedStatus.trackId, nowMs, (int) processedStatus.emaRssi);
+                tagDataDao.insert(newSample);
+            }
+
+            handleUIUpdates(processedStatus, nowMs);
+        }
     }
 
-    // This method runs on the 'worker' HandlerThread
-    private void handleProcessingSideEffects(@NonNull TagStatus processedStatus, long sampleTimestampMs, int sampleRssi) {
-        if (processedStatus.trackId != 0 && processedStatus.isInProcess()) {
-            TagData newSample = new TagData(processedStatus.trackId, sampleTimestampMs, sampleRssi);
-            tagDataDao.insert(newSample);
-        }
+    private void handleUIUpdates(@NonNull TagStatus processedStatus, long sampleTimestampMs) {
 
         TagStatus.TagStatusState lastNotified = lastNotifiedStateForTrack.get(processedStatus.trackId);
         if (processedStatus.trackId != 0 && !processedStatus.state.equals(lastNotified)) {
@@ -352,14 +361,10 @@ public class BleScannerService extends Service {
         }
     }
 
-    // This method runs on the 'worker' HandlerThread
     private void performSweepRunnable() {
-        Log.d(TAG_SERVICE, "Performing loss sweep START ");
         long now = System.currentTimeMillis();
-
         List<TagStatus> activeStatuses = tagStatusDao.getAllSync();
         if (activeStatuses == null) activeStatuses = new ArrayList<>();
-
         RaceContext raceContext = raceContextDao.latestSync();
         long gunTimeMs = (raceContext != null) ? raceContext.gunTimeMs : 0L;
 
@@ -367,35 +372,34 @@ public class BleScannerService extends Service {
         boolean retainSamplesSetting = this.currentRetainSamples;
 
         for (TagStatus status : activeStatuses) {
-            int tagId = status.tagId;
-            Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+            Object tagLock = tagLockMap.computeIfAbsent(status.tagId, k -> new Object());
             synchronized (tagLock){
                 Log.d(TAG_SERVICE, "Inside tagLock" + System.currentTimeMillis());
-                if (status.isInProcess()) {
-                    long s = System.currentTimeMillis();
+                long msSinceLastSeen = System.currentTimeMillis() - status.lastSeenMs;
+
+                if (status.state == TagStatus.TagStatusState.HERE && (msSinceLastSeen > abandonedTagTimeoutMs)) {
+                    //TODO: duplicated with TagProcessor
+
                     List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(status.trackId);
-                    Log.d(TAG_SERVICE, "getSamplesForTrackIdSync took " + (System.currentTimeMillis() - s) + " ms");
-                    s = System.currentTimeMillis();
-                    TagStatus loggedStatus = tagProcessor.processTagExit(status, samples, now, LOST_TRACKER_TIMEOUT_MS);
-                    Log.d(TAG_SERVICE, "processTagExit took " + (System.currentTimeMillis() - s) + " ms");
-                    if (loggedStatus != null) {
-                        tagStatusDao.upsert(loggedStatus);
-                        lastNotifiedStateForTrack.remove(loggedStatus.trackId);
+                    Log.w(TAG_SERVICE, "Tag" + status.tagId + " abandoned. Closing it since it was here ");
+                    status.state = TagStatus.TagStatusState.LOGGED;
+                    status.exitTimeMs = status.lastSeenMs;
 
-                        long splitMs = 0;
-                        if (gunTimeMs > 0 && loggedStatus.peakTimeMs > 0) {
-                            splitMs = loggedStatus.peakTimeMs - gunTimeMs;
-                        }
-                        notifyLine(displayLabel(loggedStatus) + " logged " + formatMmSs(splitMs));
+                    tagStatusDao.upsert(status);
+                    lastNotifiedStateForTrack.remove(status.trackId);
 
-                        if (!retainSamplesSetting) {
-                            Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + loggedStatus.trackId);
-                            tagDataDao.deleteSamplesForTrackIdSync(loggedStatus.trackId);
-                        }
+                    long splitMs = 0;
+                    if (gunTimeMs > 0 && status.peakTimeMs > 0) {
+                        splitMs = status.peakTimeMs - gunTimeMs;
+                    }
+                    notifyLine(displayLabel(status) + " logged " + formatMmSs(splitMs));
+
+                    if (!retainSamplesSetting) {
+                        Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + status.trackId);
+                        tagDataDao.deleteSamplesForTrackIdSync(status.trackId);
                     }
                 }
             }
-
         }
         Log.d(TAG_SERVICE, "Performing sweep END");
         worker.postDelayed(this::performSweepRunnable, LOST_TRACKER_INTERVAL_MS);

@@ -14,14 +14,14 @@
         android:text="App Settings"
         android:textSize="24sp"
         android:textStyle="bold"
-        android:layout_marginBottom="24dp"/>
+        android:layout_marginBottom="16dp"/>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="30dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
 
         <TextView
             android:layout_width="0dp"
@@ -36,26 +36,118 @@
             android:layout_height="wrap_content"/>
     </LinearLayout>
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Arrived Threshold (RSSI, e.g., -50)"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-        android:layout_marginBottom="16dp">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editTextArrivedThreshold"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="numberSigned"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <Button
-        android:id="@+id/buttonSaveChanges"
+    <!-- Approaching Threshold Slider -->
+    <TextView
+        android:id="@+id/labelApproachingThreshold"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Save Settings"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="24dp"/>
+        android:text="Approaching Threshold"
+        android:textSize="12sp" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/sliderApproachingThreshold"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:stepSize="1"
+        android:valueFrom="-100"
+        android:valueTo="-20" />
+
+    <!-- Arrived Threshold Slider -->
+    <TextView
+        android:id="@+id/labelArrivedThreshold"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Arrival Threshold"
+        android:textSize="12sp" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/sliderArrivedThreshold"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stepSize="1"
+        android:valueFrom="-100"
+        android:valueTo="-20" />
+
+    <!-- RSSI Averaging Alpha Slider -->
+    <TextView
+        android:id="@+id/labelRssiAlpha"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="RSSI Averaging Alpha"
+        android:textSize="12sp" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/sliderRssiAlpha"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:valueFrom="0.05"
+        android:valueTo="1.0"
+        android:stepSize="0.05"/>
+
+    <!-- Calibration Chart -->
+    <com.github.mikephil.charting.charts.LineChart
+        android:id="@+id/chartCalibration"
+        android:layout_width="match_parent"
+        android:layout_height="104dp"
+        android:layout_marginTop="16dp" />
+
+    <!-- Calibration Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/buttonStartCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start" />
+
+        <Button
+            android:id="@+id/buttonHere"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Here" />
+
+        <Button
+            android:id="@+id/buttonArriving"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Arriving" />
+
+
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:gravity="center">
+
+
+        <Button
+            android:id="@+id/buttonClearCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_margin="8dp"
+            android:text="Clear" />
+
+        <Button
+            android:id="@+id/buttonSaveChanges"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save Settings"
+            android:layout_gravity="center_horizontal"
+            android:layout_margin="8dp"/>
+    </LinearLayout>
+
+
 
 </LinearLayout>

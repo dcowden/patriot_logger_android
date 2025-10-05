@@ -9,35 +9,33 @@ import androidx.room.TypeConverters;
 
 @Entity(tableName = "tag_status",
         indices = {@Index(value = {"tagId", "state"})})
-@TypeConverters(TagStatusStateConverter.class) // Assuming StateConverter will be renamed
+@TypeConverters(TagStatusStateConverter.class)
 public class TagStatus {
 
-    /**
-     * Represents the processing state of a BLE tag during a specific pass.
-     */
     public enum TagStatusState {
-        FIRST_SAMPLE, // First sample received for this pass
-        APPROACHING, // Tag is detected and moving towards the peak signal strength point.
-        HERE,        // Tag is at or very near the peak signal strength point.
-        LOGGED       // Tag has passed the peak point and is no longer actively tracked for this pass, or signal lost.
+        FIRST_SAMPLE, 
+        APPROACHING, 
+        HERE,        
+        LOGGED       
     }
 
     @PrimaryKey(autoGenerate = true)
-    public int trackId; // New primary key for each pass
+    public int trackId;
 
-    public int tagId; // Original tag identifier from the BLE device
+    public int tagId;
 
     public String friendlyName = "";
-    public long entryTimeMs = 0L; // Timestamp of the first sample for this pass
-    public long peakTimeMs = 0L;  // Timestamp of the peak RSSI sample, to be calculated when pass is logged
-    public long exitTimeMs = 0L;  // Timestamp of the last sample for this pass
+    public long entryTimeMs = 0L;
+    public long peakTimeMs = 0L;
+    public long exitTimeMs = 0L;
 
-    public float highestRssi = -500f; // Lowest raw RSSI seen during this pass
+    public float peakRssi = -500f;
+    public float emaRssi = 0.0f;
 
     @NonNull
     public TagStatusState state = TagStatusState.FIRST_SAMPLE;
 
-    public long lastSeenMs = 0L; // Timestamp of the last sample processed for this specific trackId
+    public long lastSeenMs = 0L;
 
     public TagStatus() {}
 
@@ -48,8 +46,8 @@ public class TagStatus {
         this.entryTimeMs = entryTimeMs;
         this.lastSeenMs = entryTimeMs;
         this.state = initialState;
-        this.highestRssi = -500f; // Initialize to a high value
-        // peakTimeMs will be set upon logging the pass
+        this.peakRssi = -500f;
+        this.emaRssi = 0.0f;
     }
 
     public boolean isInProcess() {
@@ -62,13 +60,8 @@ public class TagStatus {
         return "TagStatus{" +
                "trackId=" + trackId +
                ", tagId=" + tagId +
-               ", friendlyName='" + friendlyName + '\'' +
+               ", emaRssi=" + emaRssi +
                ", state=" + state +
-               ", entryTimeMs=" + entryTimeMs +
-               ", peakTimeMs=" + peakTimeMs +
-               ", exitTimeMs=" + exitTimeMs +
-               ", lastSeenMs=" + lastSeenMs +
-               ", lowestRssi=" + highestRssi +
                '}';
     }
 }

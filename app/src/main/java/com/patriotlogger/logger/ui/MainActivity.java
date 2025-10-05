@@ -214,7 +214,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         if (isScanningActive) {
             stopBleService();
             // Directly update the state and UI here
-            this.isScanningActive = false;
+
             updateButtonStates();
         } else {
             ensureScanningIfReady();
@@ -225,6 +225,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         Intent svcIntent = new Intent(this, BleScannerService.class);
         svcIntent.setAction(BleScannerService.ACTION_STOP);
         startService(svcIntent);
+        this.isScanningActive = false;
     }
 
     private void updateButtonStates() {

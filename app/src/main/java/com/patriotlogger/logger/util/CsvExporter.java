@@ -79,7 +79,7 @@ public class CsvExporter {
             csvBuilder.append(status.entryTimeMs).append(",");
             csvBuilder.append(status.peakTimeMs).append(",");
             csvBuilder.append(status.exitTimeMs).append(",");
-            csvBuilder.append(status.highestRssi).append("\n");
+            csvBuilder.append(status.peakRssi).append("\n");
         }
         return csvBuilder.toString();
     }

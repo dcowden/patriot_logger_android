@@ -1,44 +1,55 @@
 package com.patriotlogger.logger.ui;
 
+import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Handler; // Not strictly needed if using LiveData for load and Repo callbacks for save
-import android.os.Looper;  // Not strictly needed
-import android.text.TextUtils;
-import android.util.Log; // For logging
+import android.util.Log;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
-// Import View for ProgressBar if you add it
-// import android.view.View;
-// import android.widget.ProgressBar;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.lifecycle.Observer; // To observe LiveData
 
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.LineData;
+import com.github.mikephil.charting.data.LineDataSet;
+import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
-import com.google.android.material.textfield.TextInputEditText;
 import com.patriotlogger.logger.R;
-import com.patriotlogger.logger.data.Repository; // Import Repository
-import com.patriotlogger.logger.data.RepositoryVoidCallback; // Import callback
-import com.patriotlogger.logger.data.Setting;   // Import Setting
+import com.patriotlogger.logger.data.Repository;
+import com.patriotlogger.logger.data.RepositoryVoidCallback;
+import com.patriotlogger.logger.data.Setting;
+import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.service.BleScannerService;
 
-// ExecutorService is not needed in Activity if Repository handles its own threading for writes
-// and LiveData handles its own threading for reads.
-// import java.util.concurrent.ExecutorService;
-// import java.util.concurrent.Executors;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
 
-    private static final String TAG_ACTIVITY = "SettingsActivity"; // For logging
+    private static final String TAG_ACTIVITY = "SettingsActivity";
 
-    private Repository repository; // Use Repository directly
+    private Repository repository;
     private SwitchMaterial switchRetainSamples;
-    private TextInputEditText editTextArrivedThreshold;
+    private Slider sliderApproachingThreshold;
+    private Slider sliderArrivedThreshold;
+    private Slider sliderRssiAlpha;
+    private TextView labelApproachingThreshold;
+    private TextView labelArrivedThreshold;
+    private TextView labelRssiAlpha;
     private Button buttonSaveChanges;
-    // private ProgressBar progressBar; // Optional: for loading state
+    private Button buttonStartCalibration, buttonHere, buttonArriving, buttonClearCalibration;
+    private LineChart chartCalibration;
 
-    // No need for activity-level executorService and mainThreadHandler
-    // if using LiveData for loading and Repository's async methods (with callbacks) for saving.
+    private Setting currentSettings;
+    private boolean isCalibrating = false;
+    private long calibrationStartTime = 0L;
+    private float lastRssi = 0f;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -47,142 +58,200 @@ public class SettingsActivity extends AppCompatActivity {
 
         repository = Repository.get(getApplicationContext());
 
+        // Initialize UI components
         switchRetainSamples = findViewById(R.id.switchRetainSamples);
-        editTextArrivedThreshold = findViewById(R.id.editTextArrivedThreshold);
+        sliderApproachingThreshold = findViewById(R.id.sliderApproachingThreshold);
+        sliderArrivedThreshold = findViewById(R.id.sliderArrivedThreshold);
+        sliderRssiAlpha = findViewById(R.id.sliderRssiAlpha);
+        labelApproachingThreshold = findViewById(R.id.labelApproachingThreshold);
+        labelArrivedThreshold = findViewById(R.id.labelArrivedThreshold);
+        labelRssiAlpha = findViewById(R.id.labelRssiAlpha);
         buttonSaveChanges = findViewById(R.id.buttonSaveChanges);
-        // progressBar = findViewById(R.id.progressBarSettings); // If you add a ProgressBar
+        buttonStartCalibration = findViewById(R.id.buttonStartCalibration);
+        buttonHere = findViewById(R.id.buttonHere);
+        buttonArriving = findViewById(R.id.buttonArriving);
+        buttonClearCalibration = findViewById(R.id.buttonClearCalibration);
+        chartCalibration = findViewById(R.id.chartCalibration);
 
-        buttonSaveChanges.setOnClickListener(v -> saveSettings());
-
-        // Load initial settings and observe for changes
+        setupButtons();
+        setupSliderListeners();
+        setupChart();
         loadAndObserveSettings();
+        observeCalibrationData();
     }
 
-    // onResume is a good place to ensure data is fresh, but LiveData will handle updates.
-    // If you only load once in onCreate, LiveData observer still keeps it up-to-date.
-    // No need for loadSettingsToUi() to be called from onResume explicitly if using LiveData.
-
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // If you had any LiveData observers with observeForever, unregister them here.
-        // But since we use observe(this, ...), it's lifecycle-aware.
+    protected void onStop() {
+        super.onStop();
+        if (isCalibrating) {
+            stopCalibration();
+        }
+    }
+
+    private void setupButtons() {
+        buttonSaveChanges.setOnClickListener(v -> saveSettings());
+        buttonStartCalibration.setOnClickListener(v -> toggleCalibration());
+        buttonClearCalibration.setOnClickListener(v -> clearChart());
+        buttonHere.setOnClickListener(v -> setSliderFromLastRssi(sliderArrivedThreshold));
+        buttonArriving.setOnClickListener(v -> setSliderFromLastRssi(sliderApproachingThreshold));
+    }
+
+    private void setupSliderListeners() {
+        sliderApproachingThreshold.addOnChangeListener((slider, value, fromUser) -> {
+            labelApproachingThreshold.setText(String.format(Locale.US, "Approaching Threshold (%.0f)", value));
+        });
+
+        sliderArrivedThreshold.addOnChangeListener((slider, value, fromUser) -> {
+            labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%.0f)", value));
+        });
+
+        sliderRssiAlpha.addOnChangeListener((slider, value, fromUser) -> {
+            labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", value));
+        });
+    }
+
+    private void setupChart() {
+        chartCalibration.getDescription().setEnabled(false);
+        chartCalibration.setTouchEnabled(true);
+        chartCalibration.setDragEnabled(true);
+        chartCalibration.setScaleEnabled(true);
+        chartCalibration.setDrawGridBackground(false);
+
+        YAxis leftAxis = chartCalibration.getAxisLeft();
+        leftAxis.setAxisMaximum(-30f);
+        leftAxis.setAxisMinimum(-100f);
+
+        chartCalibration.getAxisRight().setEnabled(false);
+
+        XAxis xAxis = chartCalibration.getXAxis();
+        xAxis.setAxisMinimum(0f);
+        xAxis.setAxisMaximum(30f);
+
+        clearChart();
     }
 
     private void loadAndObserveSettings() {
-        // Show loading indicator
-        // if (progressBar != null) progressBar.setVisibility(View.VISIBLE);
-        // Disable save button while loading
         buttonSaveChanges.setEnabled(false);
-
-
-        // Observe LiveData for settings from the Repository
-        repository.getLiveConfig().observe(this, new Observer<Setting>() {
-            @Override
-            public void onChanged(@Nullable Setting setting) {
-                // if (progressBar != null) progressBar.setVisibility(View.GONE);
+        repository.getLiveConfig().observe(this, setting -> {
+            if (setting != null) {
+                currentSettings = setting;
+                updateUiWithSettings(setting);
                 buttonSaveChanges.setEnabled(true);
-
-                if (setting != null) {
-                    Log.d(TAG_ACTIVITY, "Settings loaded/updated: Retain=" + setting.retain_samples + ", Threshold=" + setting.arrived_threshold);
-                    if (!isFinishing() && !isDestroyed()) { // Ensure Activity is valid
-                        switchRetainSamples.setChecked(setting.retain_samples);
-                        editTextArrivedThreshold.setText(String.valueOf(setting.arrived_threshold));
-                    }
-                } else {
-                    // This case should be handled by Repository's initialization logic.
-                    // If it still happens, it means settings are not in DB and defaults didn't initialize.
-                    Log.e(TAG_ACTIVITY, "Received null settings from Repository. Check Repository initialization.");
-                    Toast.makeText(SettingsActivity.this, "Error loading settings.", Toast.LENGTH_SHORT).show();
-                    // Potentially set UI to default values or show error state
-                    switchRetainSamples.setChecked(Setting.DEFAULT_RETAIN_SAMPLES); // Fallback to compiled defaults
-                    editTextArrivedThreshold.setText(String.valueOf(Setting.DEFAULT_ARRIVED_THRESHOLD));
-                }
             }
         });
     }
 
+    private void observeCalibrationData() {
+        repository.getThrottledLiveAllTagDataDesc(500).observe(this, tagDataList -> {
+            if (!isCalibrating || tagDataList == null || tagDataList.isEmpty()) return;
+
+            TagData mostRecent = tagDataList.get(0);
+            lastRssi = mostRecent.rssi;
+
+            float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
+
+            LineData data = chartCalibration.getData();
+            if (data != null) {
+                LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
+                if (set == null) {
+                    set = createDataSet();
+                    data.addDataSet(set);
+                }
+                data.addEntry(new Entry(elapsedTimeInSeconds, lastRssi), 0);
+                data.notifyDataChanged();
+                chartCalibration.notifyDataSetChanged();
+
+                if (elapsedTimeInSeconds > 30) {
+                    chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - 30);
+                    chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
+                }
+                chartCalibration.invalidate();
+            }
+        });
+    }
+
+
+    private void updateUiWithSettings(Setting setting) {
+        switchRetainSamples.setChecked(setting.retain_samples);
+        sliderApproachingThreshold.setValue(setting.approaching_threshold.floatValue());
+        sliderArrivedThreshold.setValue(setting.arrived_threshold.floatValue());
+        sliderRssiAlpha.setValue(setting.rssi_averaging_alpha);
+        labelApproachingThreshold.setText(String.format(Locale.US, "Approaching Threshold (%d)", setting.approaching_threshold));
+        labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%d)", setting.arrived_threshold));
+        labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", setting.rssi_averaging_alpha));
+    }
+
     private void saveSettings() {
-        boolean retainSamples = switchRetainSamples.isChecked();
-        String thresholdStr = editTextArrivedThreshold.getText() != null ?
-                editTextArrivedThreshold.getText().toString() : "";
-
-        if (TextUtils.isEmpty(thresholdStr)) {
-            editTextArrivedThreshold.setError("Threshold cannot be empty.");
-            Toast.makeText(this, "Arrived threshold is required.", Toast.LENGTH_SHORT).show();
+        if (currentSettings == null) {
+            Toast.makeText(this, "Error: Settings not loaded yet.", Toast.LENGTH_SHORT).show();
             return;
         }
+        currentSettings.retain_samples = switchRetainSamples.isChecked();
+        currentSettings.approaching_threshold = (int) sliderApproachingThreshold.getValue();
+        currentSettings.arrived_threshold = (int) sliderArrivedThreshold.getValue();
+        currentSettings.rssi_averaging_alpha = sliderRssiAlpha.getValue();
 
-        int arrivedThreshold;
-        try {
-            arrivedThreshold = Integer.parseInt(thresholdStr);
-        } catch (NumberFormatException e) {
-            editTextArrivedThreshold.setError("Invalid number format.");
-            Toast.makeText(this, "Invalid threshold value.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // Optional validation (example)
-        if (arrivedThreshold > 0 || arrivedThreshold < -100) {
-            editTextArrivedThreshold.setError("Threshold typically ranges from -100 to 0.");
-            Toast.makeText(this, "Threshold usually from -100 to 0.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-
-        // Disable button to prevent multiple clicks while saving
         buttonSaveChanges.setEnabled(false);
-        // if (progressBar != null) progressBar.setVisibility(View.VISIBLE); // Show saving progress
-
-        // We can update settings individually or by creating a new Setting object.
-        // Using individual setters for this example. The Repository methods are already async.
-
-        // Counter to track completion of async operations if updating individually
-        // Or, more simply, update the whole object if that API is preferred.
-        // Let's use the upsertConfig method for simplicity which takes the whole object.
-
-        // First, get the current settings to preserve any other settings if they exist
-        // and only update the relevant ones.
-        // repository.getConfigOnce() is async and returns LiveData. This is a bit complex for a simple save.
-        // Better: The Repository's setRetainSamples and setArrivedThreshold methods already handle
-        // fetching the current config, updating it, and saving.
-
-        // We'll call setRetainSamples and setArrivedThreshold. Since they are independent,
-        // we might get two "saved" messages or need to coordinate.
-        // A simpler approach: create a Setting object and upsert it.
-
-        Setting newSetting = new Setting(); // Will be initialized with defaults from Setting class
-        newSetting.id = Setting.SETTINGS_ID; // Ensure ID is correct
-        newSetting.retain_samples = retainSamples;
-        newSetting.arrived_threshold = arrivedThreshold;
-        // If there were other settings, you'd fetch the current Setting object first, modify, then upsert.
-        // But since Setting entity only has these two + id, we can construct directly.
-
-        repository.upsertConfig(newSetting, new RepositoryVoidCallback() {
+        repository.upsertConfig(currentSettings, new RepositoryVoidCallback() {
             @Override
             public void onSuccess() {
-                // Re-enable button, hide progress
                 buttonSaveChanges.setEnabled(true);
-                // if (progressBar != null) progressBar.setVisibility(View.GONE);
-
-                if (!isFinishing() && !isDestroyed()) {
-                    Toast.makeText(SettingsActivity.this, "Settings saved!", Toast.LENGTH_SHORT).show();
-                    Log.i(TAG_ACTIVITY, "Settings saved successfully.");
-                    // The LiveData observer in loadAndObserveSettings() will automatically
-                    // reflect the change if the upsert was successful and the underlying data changed.
-                    finish(); // Optionally close
-                }
+                Toast.makeText(SettingsActivity.this, "Settings saved!", Toast.LENGTH_SHORT).show();
+                finish();
             }
 
             @Override
             public void onError(Exception e) {
                 buttonSaveChanges.setEnabled(true);
-                // if (progressBar != null) progressBar.setVisibility(View.GONE);
+                Toast.makeText(SettingsActivity.this, "Error saving settings.", Toast.LENGTH_SHORT).show();
                 Log.e(TAG_ACTIVITY, "Error saving settings", e);
-                if (!isFinishing() && !isDestroyed()) {
-                    Toast.makeText(SettingsActivity.this, "Error saving settings.", Toast.LENGTH_SHORT).show();
-                }
             }
         });
+    }
+
+    private void toggleCalibration() {
+        if (isCalibrating) {
+            stopCalibration();
+        } else {
+            startCalibration();
+        }
+    }
+
+    private void startCalibration() {
+        isCalibrating = true;
+        buttonStartCalibration.setText("Stop");
+        clearChart();
+        calibrationStartTime = System.currentTimeMillis();
+        startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START));
+    }
+
+    private void stopCalibration() {
+        isCalibrating = false;
+        buttonStartCalibration.setText("Start");
+        startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
+    }
+
+    private void clearChart() {
+        chartCalibration.setData(new LineData(createDataSet()));
+        chartCalibration.invalidate();
+        calibrationStartTime = System.currentTimeMillis();
+        chartCalibration.getXAxis().setAxisMinimum(0f);
+        chartCalibration.getXAxis().setAxisMaximum(30f);
+    }
+
+    private LineDataSet createDataSet() {
+        LineDataSet set = new LineDataSet(new ArrayList<>(), "RSSI");
+        set.setDrawCircles(true);
+        set.setCircleColor(Color.BLUE);
+        set.setCircleRadius(4f);
+        set.setColor(Color.BLUE);
+        set.setLineWidth(2f);
+        return set;
+    }
+
+    private void setSliderFromLastRssi(Slider slider) {
+        if (isCalibrating && lastRssi != 0f) {
+            slider.setValue(lastRssi);
+        }
     }
 }

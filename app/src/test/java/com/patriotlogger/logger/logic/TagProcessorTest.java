@@ -59,7 +59,7 @@ public class TagProcessorTest {
         status.lastSeenMs = entryTimeMs; 
         status.exitTimeMs = entryTimeMs;   
         status.state = TagStatus.TagStatusState.APPROACHING;
-        status.highestRssi = initialRssi;
+        status.peakRssi = initialRssi;
         return status;
     }
 

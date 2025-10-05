@@ -81,23 +81,24 @@ public interface TagStatusDao {
     // to extract the first element or provide a LiveData<TagStatus>.
     // For direct DAO, LiveData<List<TagStatus>> is fine.
     @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND state IN (:states) ORDER BY trackId DESC")
-    LiveData<List<TagStatus>> liveGetByTagIdAndStates(int tagId, List<String> states); // NEW: LiveData version for the list
-
-
-    // --- Synchronous Read Operations (For Repository's internal use on background threads if needed) ---
-    // Keep these if your Repository logic (like in setGunTime) still needs to perform a quick sync read
-    // as part of a background operation. Otherwise, they could be removed if all Repository reads
-    // become LiveData based.
+    LiveData<List<TagStatus>> liveGetByTagIdAndStates(int tagId, List<String> states);
 
     @Query("SELECT * FROM tag_status ORDER BY trackId DESC")
-    List<TagStatus> getAllSync(); // Keep if needed by Repository logic
+    List<TagStatus> getAllSync();
 
     @Query("SELECT * FROM tag_status WHERE trackId = :trackId LIMIT 1")
-    TagStatus getByTrackIdSync(int trackId); // Keep if needed
+    TagStatus getByTrackIdSync(int trackId);
 
     @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'APPROACHING' OR state = 'HERE') ORDER BY trackId DESC LIMIT 1")
-    TagStatus getActiveStatusForTagIdSync(int tagId); // Keep if needed
+    TagStatus getActiveStatusForTagIdSync(int tagId);
+
+    @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'LOGGED' ) ORDER BY trackId DESC LIMIT 1")
+    TagStatus getLastLoggedForTagId(int tagId);
+
 
     @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND state IN (:states) ORDER BY trackId DESC")
-    List<TagStatus> getByTagIdAndStatesSync(int tagId, List<String> states); // Keep if needed
+    List<TagStatus> getByTagIdAndStatesSync(int tagId, List<String> states);
+
+
+
 }
