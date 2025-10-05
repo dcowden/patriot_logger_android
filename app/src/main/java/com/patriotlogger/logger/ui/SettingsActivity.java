@@ -170,7 +170,7 @@ public class SettingsActivity extends AppCompatActivity {
                     Log.i(TAG_ACTIVITY, "Settings saved successfully.");
                     // The LiveData observer in loadAndObserveSettings() will automatically
                     // reflect the change if the upsert was successful and the underlying data changed.
-                    // finish(); // Optionally close
+                    finish(); // Optionally close
                 }
             }
 

@@ -257,10 +257,16 @@ public final class Repository {
         upsertConfig(setting, null);
     }
 
-    public void clearAllData(@Nullable RepositoryVoidCallback callback) {
+    public void clearAllData(boolean clearSettings,@Nullable RepositoryVoidCallback callback) {
         databaseWriteExecutor.execute(() -> {
             try {
-                db.clearAllTables();
+                if ( clearSettings){
+                    db.clearAllTables();
+                }
+                else{
+                    db.clearAllTablesExceptSettings();
+                }
+
                 checkAndInitializeDefaultSettingsInternal();
                 if (callback != null) mainThreadHandler.post(callback::onSuccess);
             } catch (Exception e) {
@@ -269,7 +275,7 @@ public final class Repository {
         });
     }
 
-    public void clearAllData() {
-        clearAllData(null);
+    public void clearAllData(boolean clearSettings) {
+        clearAllData(clearSettings, null);
     }
 }

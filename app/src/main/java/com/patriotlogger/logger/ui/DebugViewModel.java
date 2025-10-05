@@ -30,7 +30,7 @@ public class DebugViewModel extends AndroidViewModel {
     }
 
     public void clearAllRoomData() {
-        repository.clearAllData(new RepositoryVoidCallback() {
+        repository.clearAllData(true,new RepositoryVoidCallback() {
             @Override
             public void onSuccess() {
                 Log.i("DebugViewModel", "All Room data cleared successfully.");

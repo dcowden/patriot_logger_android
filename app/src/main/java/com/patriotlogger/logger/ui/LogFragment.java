@@ -111,7 +111,7 @@ public class LogFragment extends Fragment {
                 .setTitle("Clear Log")
                 .setMessage("Are you sure you want to clear all log entries and reset gun time?")
                 .setPositiveButton("Clear", (dialog, which) -> {
-                    repository.clearAllData(new RepositoryVoidCallback() {
+                    repository.clearAllData(false, new RepositoryVoidCallback() {
                         @Override
                         public void onSuccess() {
                             // UI updates should ideally be driven by LiveData reacting to the clear.

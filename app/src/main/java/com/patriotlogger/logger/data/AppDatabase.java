@@ -13,4 +13,15 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract RaceContextDao raceContextDao();
     public abstract SettingDao settingDao();
     public abstract TagDataDao tagDataDao();
+
+    public void clearAllTablesExceptSettings() {
+        // Run the clear operations in a single transaction
+        runInTransaction(() -> {
+            tagStatusDao().clear();
+            racerDao().clear();
+            raceContextDao().clear();
+            tagDataDao().clear();
+            // Note: We DO NOT call settingDao().clear()
+        });
+    }
 }
