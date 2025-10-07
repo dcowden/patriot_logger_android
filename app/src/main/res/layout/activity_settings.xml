@@ -1,155 +1,145 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:padding="16dp"
     tools:context=".ui.SettingsActivity">
 
     <TextView
+        android:id="@+id/tvSettingsTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="App Settings"
         android:textSize="24sp"
         android:textStyle="bold"
-        android:layout_marginBottom="16dp"/>
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="30dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+    <TextView
+        android:id="@+id/tvRetainSamplesLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Retain Samples After Logging"
+        android:textSize="18sp"
+        app:layout_constraintEnd_toStartOf="@+id/switchRetainSamples"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvSettingsTitle" />
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Retain Samples After Logging"
-            android:textSize="18sp"/>
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchRetainSamples"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="@+id/tvRetainSamplesLabel"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/tvRetainSamplesLabel" />
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchRetainSamples"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"/>
-    </LinearLayout>
-
-    <!-- Approaching Threshold Slider -->
     <TextView
         android:id="@+id/labelApproachingThreshold"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:text="Approaching Threshold"
-        android:textSize="12sp" />
+        android:textSize="12sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvRetainSamplesLabel" />
 
     <com.google.android.material.slider.Slider
         android:id="@+id/sliderApproachingThreshold"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="14dp"
         android:stepSize="1"
         android:valueFrom="-100"
-        android:valueTo="-20" />
+        android:valueTo="-20"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/labelApproachingThreshold" />
 
-    <!-- Arrived Threshold Slider -->
     <TextView
         android:id="@+id/labelArrivedThreshold"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="Arrival Threshold"
-        android:textSize="12sp" />
+        android:textSize="12sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/sliderApproachingThreshold" />
 
     <com.google.android.material.slider.Slider
         android:id="@+id/sliderArrivedThreshold"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:stepSize="1"
         android:valueFrom="-100"
-        android:valueTo="-20" />
+        android:valueTo="-20"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/labelArrivedThreshold" />
 
-    <!-- RSSI Averaging Alpha Slider (Commented Out) -->
-    <!--
-    <TextView
-        android:id="@+id/labelRssiAlpha"
+    <com.github.mikephil.charting.charts.LineChart
+        android:id="@+id/chartCalibration"
+        android:layout_width="0dp"
+        android:layout_height="104dp"
+        android:layout_marginTop="16dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/sliderArrivedThreshold" />
+
+    <Button
+        android:id="@+id/buttonStartCalibration"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="RSSI Averaging Alpha"
-        android:textSize="12sp" />
+        android:text="Start"
+        app:layout_constraintEnd_toStartOf="@+id/buttonHere"
+        app:layout_constraintHorizontal_chainStyle="packed"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/chartCalibration" />
 
-    <com.google.android.material.slider.Slider
-        android:id="@+id/sliderRssiAlpha"
-        android:layout_width="match_parent"
+    <Button
+        android:id="@+id/buttonHere"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:valueFrom="0.05"
-        android:valueTo="1.0"
-        android:stepSize="0.05"/>
-    -->
+        android:layout_marginStart="8dp"
+        android:text="Set Here"
+        app:layout_constraintBottom_toBottomOf="@+id/buttonStartCalibration"
+        app:layout_constraintEnd_toStartOf="@+id/buttonArriving"
+        app:layout_constraintStart_toEndOf="@+id/buttonStartCalibration"
+        app:layout_constraintTop_toTopOf="@+id/buttonStartCalibration" />
 
-    <!-- Calibration Chart -->
-    <com.github.mikephil.charting.charts.LineChart
-        android:id="@+id/chartCalibration"
-        android:layout_width="match_parent"
-        android:layout_height="104dp"
-        android:layout_marginTop="16dp" />
-
-    <!-- Calibration Buttons -->
-    <LinearLayout
-        android:layout_width="match_parent"
+    <Button
+        android:id="@+id/buttonArriving"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_marginStart="8dp"
+        android:text="Set Arriving"
+        app:layout_constraintBottom_toBottomOf="@+id/buttonHere"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/buttonHere"
+        app:layout_constraintTop_toTopOf="@+id/buttonHere" />
+
+    <Button
+        android:id="@+id/buttonClearCalibration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:gravity="center">
+        android:text="Clear"
+        app:layout_constraintEnd_toStartOf="@+id/buttonSaveChanges"
+        app:layout_constraintHorizontal_chainStyle="packed"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/buttonStartCalibration" />
 
-        <Button
-            android:id="@+id/buttonStartCalibration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Start" />
-
-        <Button
-            android:id="@+id/buttonHere"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Here" />
-
-        <Button
-            android:id="@+id/buttonArriving"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Arriving" />
-
-
-    </LinearLayout>
-    <LinearLayout
-        android:layout_width="match_parent"
+    <Button
+        android:id="@+id/buttonSaveChanges"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp"
-        android:gravity="center">
+        android:layout_marginStart="8dp"
+        android:text="Save Settings"
+        app:layout_constraintBottom_toBottomOf="@+id/buttonClearCalibration"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/buttonClearCalibration"
+        app:layout_constraintTop_toTopOf="@+id/buttonClearCalibration" />
 
-
-        <Button
-            android:id="@+id/buttonClearCalibration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_margin="8dp"
-            android:text="Clear" />
-
-        <Button
-            android:id="@+id/buttonSaveChanges"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Save Settings"
-            android:layout_gravity="center_horizontal"
-            android:layout_margin="8dp"/>
-    </LinearLayout>
-
-
-
-</LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

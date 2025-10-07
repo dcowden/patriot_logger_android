@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors (Dark Theme) -->
+    <!-- A lighter, less saturated blue for the primary color -->
+    <color name="primary">#64B5F6</color> <!-- Blue 300 -->
+    <color name="primary_dark">#1976D2</color> <!-- The original primary blue, acts as a dark variant here -->
+    <color name="primary_light">#E3F2FD</color> <!-- Blue 50 -->
+
+    <!-- Accent Colors (Dark Theme) -->
+    <!-- Orange provides good contrast on a dark background -->
+    <color name="accent">#FFB74D</color> <!-- Orange 300 -->
+    <color name="accent_dark">#FF9800</color> <!-- The original accent orange -->
+    <color name="accent_light">#FFE0B2</color>
+
+    <!-- Background Colors (Dark Theme) -->
+    <!-- Using standard material dark theme background colors -->
+    <color name="background_light">#212121</color> <!-- A slightly lighter dark surface -->
+    <color name="background_white">#121212</color> <!-- The main window background -->
+    <color name="clock_background">#2C2C2C</color> <!-- A distinct dark color for the clock -->
+
+    <!-- Text Colors (Dark Theme) -->
+    <color name="text_primary">#FFFFFFFF</color> <!-- White, high emphasis -->
+    <color name="text_secondary">#B3FFFFFF</color> <!-- White, 70% opacity, medium emphasis -->
+    <color name="text_hint">#80FFFFFF</color> <!-- White, 50% opacity, hint text -->
+
+    <!-- Status Colors (Dark Theme) - Lighter shades for better visibility -->
+    <color name="status_approaching">#FFB74D</color> <!-- Orange 300 -->
+    <color name="status_here">#64B5F6</color> <!-- Blue 300 -->
+    <color name="status_logged">#81C784</color> <!-- Green 300 -->
+
+    <!-- Toolbar Status Colors (Dark Theme) -->
+    <color name="status_scanning_green">#66BB6A</color> <!-- Green 400 -->
+    <color name="status_paused_red">#EF5350</color> <!-- Red 400 -->
+
+    <!-- Action Colors (Dark Theme) - Using lighter shades -->
+    <color name="green">#81C784</color> <!-- Green 300 -->
+    <color name="orange">#FFB74D</color> <!-- Orange 300 -->
+    <color name="red">#EF5350</color> <!-- Red 400 -->
+    <color name="blue">#64B5F6</color> <!-- Blue 300 -->
+
+    <!-- UI Elements (Dark Theme) -->
+    <color name="divider">#33FFFFFF</color> <!-- White with low opacity -->
+    <color name="card_stroke">#33FFFFFF</color>
+    <color name="ripple">#33FFFFFF</color>
+
+    <!-- Material Design Standard Colors (Can often be kept the same) -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

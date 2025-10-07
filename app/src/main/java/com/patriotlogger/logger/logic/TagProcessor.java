@@ -38,8 +38,6 @@ public class TagProcessor {
         statusToProcess.lastSeenMs = nowMs;
 
         if (statusToProcess.state == TagStatus.TagStatusState.FIRST_SAMPLE) {
-            statusToProcess.state = TagStatus.TagStatusState.APPROACHING;
-            // For the very first sample, just set the EMA directly.
             statusToProcess.emaRssi = (float) rssi;
         } else {
             // For all subsequent samples, apply the moving average formula.
@@ -52,6 +50,10 @@ public class TagProcessor {
             Log.i("TagProcessor", statusToProcess.tagId + "->APPROACHING (RSSI: " + rssi + ")");
         }
 
+        if (statusToProcess.state == TagStatus.TagStatusState.FIRST_SAMPLE) {
+            statusToProcess.state = TagStatus.TagStatusState.APPROACHING;
+            Log.i("TagProcessor", statusToProcess.tagId + "->APPROACHING (RSSI: " + rssi + ")");
+        }
         if (statusToProcess.state == TagStatus.TagStatusState.APPROACHING) {
             if (statusToProcess.emaRssi >= settings.arrived_threshold) {
                 statusToProcess.state = TagStatus.TagStatusState.HERE;

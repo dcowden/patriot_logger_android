@@ -53,5 +53,15 @@
     <color name="notification_icon">#1976D2</color>
     <color name="stateLogged"></color>
     <color name="success_green">#4CAF50</color>
-    <color name="failure_red">#F44336</color>
+    <color name="failure_red">#F44336</color> <!-- Example: A deep purple -->
+    <color name="primaryVariant">#FF3700B3</color>
+    <color name="secondary">#FF03DAC6</color>
+
+    <!-- Define specific background and text colors -->
+    <color name="window_background_color">#FF121212</color> <!-- A standard dark background color -->
+    <color name="primary_text_color">#FFFFFFFF</color> <!-- White text for high emphasis -->
+    <color name="secondary_text_color">#B3FFFFFF</color>
+
+    <!-- Define primary colors for the dark theme -->
+    <!-- <color name="primary">#FF3700B3</color> -->
 </resources>
