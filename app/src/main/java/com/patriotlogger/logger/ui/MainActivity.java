@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -60,6 +61,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+
 import pub.devrel.easypermissions.AfterPermissionGranted;
 import pub.devrel.easypermissions.EasyPermissions;
 
@@ -71,7 +73,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private MainViewModel vm;
     private MaterialToolbar toolbar;
     private TextView tvHeader, tvClock, tvTotalSamples;
-    private Button btnAction, btnDebug, btnSettings, btnDownload;
+    private Button btnAction, btnDebug, btnSettings, btnClear;
     private final Handler clockHandler = new Handler(Looper.getMainLooper());
     private long gunTimeMs = 0L;
     private boolean isScanningActive = false;
@@ -80,7 +82,6 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private ExecutorService executorService;
     private Handler mainThreadHandler;
 
-    // Launchers
     private final ActivityResultLauncher<Intent> openLocationSettingsLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), r -> {
                 if (isLocationEnabled()) {
@@ -113,11 +114,11 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         btnAction = findViewById(R.id.btnAction);
         btnDebug = findViewById(R.id.btnDebug);
         btnSettings = findViewById(R.id.btnSettings);
-        btnDownload = findViewById(R.id.btnDownload);
+        btnClear = findViewById(R.id.btnClear);
 
         btnDebug.setOnClickListener(v -> startActivity(new Intent(this, DebugActivity.class)));
         btnSettings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
-        btnDownload.setOnClickListener(v -> onDownloadCsvClicked());
+        btnClear.setOnClickListener(v -> showClearDataDialog());
 
         vm.getContext().observe(this, ctx -> {
             tvHeader.setText(vm.headerText(ctx));
@@ -130,6 +131,10 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             }
         });
 
+        BleScannerService.isScanning.observe(this, isScanning -> {
+            this.isScanningActive = isScanning;
+            updateButtonStates();
+        });
 
         repository.getTotalDataCount().observe(this, count -> {
             tvTotalSamples.setText(String.format(Locale.getDefault(), "Captured: %d Splits, %d pings ", count.tagCount, count.sampleCount));
@@ -140,6 +145,31 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         handleDeepLink(getIntent());
         startClock();
         requestAllRuntimePerms();
+    }
+
+    private void showClearDataDialog() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Clear All Data?")
+                .setMessage("This will erase all logged splits and samples. This action cannot be undone.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Clear Data", (dialog, which) -> {
+                    repository.clearAllData(false, new RepositoryVoidCallback() {
+                        @Override
+                        public void onSuccess() {
+                            mainThreadHandler.post(() -> {
+                                Toast.makeText(MainActivity.this, "All data cleared.", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+
+                        @Override
+                        public void onError(Exception e) {
+                            mainThreadHandler.post(() -> {
+                                Toast.makeText(MainActivity.this, "Error clearing data.", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    });
+                })
+                .show();
     }
 
     @Override
@@ -213,9 +243,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private void onActionButtonClicked() {
         if (isScanningActive) {
             stopBleService();
-            // Directly update the state and UI here
-
-            updateButtonStates();
+            onDownloadCsvClicked();
         } else {
             ensureScanningIfReady();
         }
@@ -225,16 +253,16 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         Intent svcIntent = new Intent(this, BleScannerService.class);
         svcIntent.setAction(BleScannerService.ACTION_STOP);
         startService(svcIntent);
-        this.isScanningActive = false;
     }
 
     private void updateButtonStates() {
-        btnAction.setText(isScanningActive ? "Stop" : "Start");
+        btnAction.setText(isScanningActive ? "Download Results" : "Start");
         if (toolbar != null) {
             if (isScanningActive) {
                 toolbar.setBackgroundColor(ContextCompat.getColor(this, R.color.status_scanning_green));
             } else {
                 toolbar.setBackgroundColor(ContextCompat.getColor(this, R.color.primary));
+                this.gunTimeMs = 0L;
             }
         }
     }
@@ -258,10 +286,6 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     }
 
     private void ensureScanningIfReady() {
-        if (isScanningActive) {
-            return;
-        }
-
         if (this.gunTimeMs <= 0) {
             long now = System.currentTimeMillis();
             repository.setGunTime(now, new RepositoryVoidCallback() {
@@ -300,9 +324,6 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         } else {
             startService(svcIntent);
         }
-
-        this.isScanningActive = true;
-        updateButtonStates();
     }
 
     private void onDownloadCsvClicked() {
@@ -312,8 +333,6 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                 return;
             }
         }
-
-        //Toast.makeText(this, "Generating CSV files...", Toast.LENGTH_SHORT).show();
 
         executorService.execute(() -> {
             AppDatabase db = repository.getDatabase();

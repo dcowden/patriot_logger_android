@@ -33,15 +33,16 @@ import java.util.Locale;
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String TAG_ACTIVITY = "SettingsActivity";
+    public static final int SCREEN_UPDATE_RATE_MS = 200;
 
     private Repository repository;
     private SwitchMaterial switchRetainSamples;
     private Slider sliderApproachingThreshold;
     private Slider sliderArrivedThreshold;
-    private Slider sliderRssiAlpha;
+    // private Slider sliderRssiAlpha;
     private TextView labelApproachingThreshold;
     private TextView labelArrivedThreshold;
-    private TextView labelRssiAlpha;
+    // private TextView labelRssiAlpha;
     private Button buttonSaveChanges;
     private Button buttonStartCalibration, buttonHere, buttonArriving, buttonClearCalibration;
     private LineChart chartCalibration;
@@ -62,10 +63,10 @@ public class SettingsActivity extends AppCompatActivity {
         switchRetainSamples = findViewById(R.id.switchRetainSamples);
         sliderApproachingThreshold = findViewById(R.id.sliderApproachingThreshold);
         sliderArrivedThreshold = findViewById(R.id.sliderArrivedThreshold);
-        sliderRssiAlpha = findViewById(R.id.sliderRssiAlpha);
+        // sliderRssiAlpha = findViewById(R.id.sliderRssiAlpha);
         labelApproachingThreshold = findViewById(R.id.labelApproachingThreshold);
         labelArrivedThreshold = findViewById(R.id.labelArrivedThreshold);
-        labelRssiAlpha = findViewById(R.id.labelRssiAlpha);
+        // labelRssiAlpha = findViewById(R.id.labelRssiAlpha);
         buttonSaveChanges = findViewById(R.id.buttonSaveChanges);
         buttonStartCalibration = findViewById(R.id.buttonStartCalibration);
         buttonHere = findViewById(R.id.buttonHere);
@@ -105,9 +106,9 @@ public class SettingsActivity extends AppCompatActivity {
             labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%.0f)", value));
         });
 
-        sliderRssiAlpha.addOnChangeListener((slider, value, fromUser) -> {
-            labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", value));
-        });
+        // sliderRssiAlpha.addOnChangeListener((slider, value, fromUser) -> {
+        //     labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", value));
+        // });
     }
 
     private void setupChart() {
@@ -142,7 +143,7 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void observeCalibrationData() {
-        repository.getThrottledLiveAllTagDataDesc(500).observe(this, tagDataList -> {
+        repository.getThrottledLiveAllTagDataDesc(SCREEN_UPDATE_RATE_MS).observe(this, tagDataList -> {
             if (!isCalibrating || tagDataList == null || tagDataList.isEmpty()) return;
 
             TagData mostRecent = tagDataList.get(0);
@@ -175,10 +176,10 @@ public class SettingsActivity extends AppCompatActivity {
         switchRetainSamples.setChecked(setting.retain_samples);
         sliderApproachingThreshold.setValue(setting.approaching_threshold.floatValue());
         sliderArrivedThreshold.setValue(setting.arrived_threshold.floatValue());
-        sliderRssiAlpha.setValue(setting.rssi_averaging_alpha);
+        // sliderRssiAlpha.setValue(setting.rssi_averaging_alpha);
         labelApproachingThreshold.setText(String.format(Locale.US, "Approaching Threshold (%d)", setting.approaching_threshold));
         labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%d)", setting.arrived_threshold));
-        labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", setting.rssi_averaging_alpha));
+        // labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", setting.rssi_averaging_alpha));
     }
 
     private void saveSettings() {
@@ -189,7 +190,7 @@ public class SettingsActivity extends AppCompatActivity {
         currentSettings.retain_samples = switchRetainSamples.isChecked();
         currentSettings.approaching_threshold = (int) sliderApproachingThreshold.getValue();
         currentSettings.arrived_threshold = (int) sliderArrivedThreshold.getValue();
-        currentSettings.rssi_averaging_alpha = sliderRssiAlpha.getValue();
+        // currentSettings.rssi_averaging_alpha = sliderRssiAlpha.getValue();
 
         buttonSaveChanges.setEnabled(false);
         repository.upsertConfig(currentSettings, new RepositoryVoidCallback() {

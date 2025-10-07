@@ -87,24 +87,24 @@ public class LogFragment extends Fragment {
         });
     }
 
-    @Override
-    public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
-        inflater.inflate(R.menu.menu_log_fragment, menu);
-        super.onCreateOptionsMenu(menu, inflater);
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        int itemId = item.getItemId();
-        if (itemId == R.id.action_clear_log) {
-            showClearLogConfirmationDialog();
-            return true;
-        } else if (itemId == R.id.action_set_gun_time) {
-            showSetGunTimeDialog();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
+//    @Override
+//    public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
+//        inflater.inflate(R.menu.menu_log_fragment, menu);
+//        super.onCreateOptionsMenu(menu, inflater);
+//    }
+//
+//    @Override
+//    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+//        int itemId = item.getItemId();
+//        if (itemId == R.id.action_clear_log) {
+//            showClearLogConfirmationDialog();
+//            return true;
+//        } else if (itemId == R.id.action_set_gun_time) {
+//            showSetGunTimeDialog();
+//            return true;
+//        }
+//        return super.onOptionsItemSelected(item);
+//    }
 
     private void showClearLogConfirmationDialog() {
         new AlertDialog.Builder(requireContext())

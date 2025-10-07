@@ -47,6 +47,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 
 public class BleScannerService extends Service {
     private static final String TAG_SERVICE = "BleScannerService";
@@ -90,6 +92,14 @@ public class BleScannerService extends Service {
     private final Map<Integer, TagStatus.TagStatusState> lastNotifiedStateForTrack = new ConcurrentHashMap<>();
     private Observer<Setting> settingsObserver;
 
+    // 1. CREATE THE STATIC MUTABLELIVEDATA
+    // This will be the single source of truth for the scanning state.
+    // It's private so only the service can change it.
+    private static final MutableLiveData<Boolean> _isScanning = new MutableLiveData<>(false);
+
+    // 2. EXPOSE IT AS A PUBLIC, NON-MUTABLE LIVEDATA
+    // This allows any part of your app to observe the state without being able to change it.
+    public static final LiveData<Boolean> isScanning = _isScanning;
 
     @Override
     public void onCreate() {
@@ -112,10 +122,6 @@ public class BleScannerService extends Service {
             if (setting != null) {
                 this.currentSettings = setting;
                 Log.d(TAG_SERVICE, "BLE Service Updating New Settings: setting");
-                //currentArrivedThreshold = setting.arrived_threshold;
-                //currentApproachingThreshold = setting.approaching_threshold;
-                //currentRssiAveragingAlpha = setting.rssi_averaging_alpha;
-                //currentRetainSamples = setting.retain_samples;
             }
         };
 
@@ -136,12 +142,17 @@ public class BleScannerService extends Service {
             notifyLine("Scanner Stopping...");
             Log.i(TAG_SERVICE, "Received stop command");
             stopSelf();
+            _isScanning.postValue(false);
             return START_NOT_STICKY;
         }
-        notifyLine("Scanner Starting...");
-        Log.i(TAG_SERVICE, "Received start command");
-        startScan();
-        return START_STICKY;
+        else{
+            notifyLine("Scanner Starting...");
+            Log.i(TAG_SERVICE, "Received start command");
+            startScan();
+            _isScanning.postValue(true);
+            return START_STICKY;
+
+        }
     }
 
     @Override
@@ -157,7 +168,7 @@ public class BleScannerService extends Service {
             worker.removeCallbacksAndMessages(null);
             workerThread.quitSafely();
         }
-
+        _isScanning.postValue(false);
         lastNotifiedStateForTrack.clear();
         Log.i(TAG_SERVICE, "Service Destroyed");
     }

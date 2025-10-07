@@ -69,7 +69,8 @@
         android:valueFrom="-100"
         android:valueTo="-20" />
 
-    <!-- RSSI Averaging Alpha Slider -->
+    <!-- RSSI Averaging Alpha Slider (Commented Out) -->
+    <!--
     <TextView
         android:id="@+id/labelRssiAlpha"
         android:layout_width="wrap_content"
@@ -85,6 +86,7 @@
         android:valueFrom="0.05"
         android:valueTo="1.0"
         android:stepSize="0.05"/>
+    -->
 
     <!-- Calibration Chart -->
     <com.github.mikephil.charting.charts.LineChart
