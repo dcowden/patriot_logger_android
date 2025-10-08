@@ -41,6 +41,9 @@ public interface TagDataDao {
     @Query("SELECT * FROM tag_data WHERE trackId = :trackId ORDER BY timestampMs ASC")
     List<TagData> getSamplesForTrackIdSync(int trackId);
 
+    @Query("SELECT * FROM tag_data WHERE timestampMs > :sinceTimestampMs ORDER BY timestampMs ASC")
+    List<TagData> getNewSamplesSync(long sinceTimestampMs);
+
     @Query("SELECT * FROM tag_data ORDER BY timestampMs ASC")
     List<TagData> getAllTagDataSync();
 

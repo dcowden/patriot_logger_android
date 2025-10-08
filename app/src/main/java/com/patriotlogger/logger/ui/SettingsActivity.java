@@ -3,6 +3,8 @@ package com.patriotlogger.logger.ui;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
@@ -21,6 +23,7 @@ import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.patriotlogger.logger.R;
 import com.patriotlogger.logger.data.Repository;
+import com.patriotlogger.logger.data.RepositoryCallback;
 import com.patriotlogger.logger.data.RepositoryVoidCallback;
 import com.patriotlogger.logger.data.Setting;
 import com.patriotlogger.logger.data.TagData;
@@ -30,11 +33,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String TAG_ACTIVITY = "SettingsActivity";
     public static final int SCREEN_UPDATE_RATE_MS = 200;
+    public static final int GRAPH_MAX_SECS = 30;
 
+    // Add these variables to your SettingsActivity class
+    private final Handler calibrationHandler =  new Handler(Looper.getMainLooper());
+    private long lastSampleTimestamp = 0L;
+    private static final int CHART_UPDATE_INTERVAL_MS = 200; // Poll every 200ms
     private Repository repository;
     private SwitchMaterial switchRetainSamples;
     private Slider sliderApproachingThreshold;
@@ -51,6 +60,108 @@ public class SettingsActivity extends AppCompatActivity {
     private boolean isCalibrating = false;
     private long calibrationStartTime = 0L;
     private float lastRssi = 0f;
+
+
+    // Add this Runnable to your SettingsActivity class
+    private final Runnable fetchNewSamplesRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isCalibrating) {
+                return; // Stop the loop if calibration is turned off
+            }
+
+            // Use your existing `getNewSamplesSync` method via the repository
+            // This runs on a background thread defined in your repository.
+            repository.getNewTagDataSamples(lastSampleTimestamp, new RepositoryCallback<List<TagData>>() {
+                @Override
+                public void onSuccess(List<TagData> newSamples) {
+                    if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
+                        long s = System.currentTimeMillis();
+                        Log.i("SettingsActivity", "Starring Chart Display");
+
+                        LineData lineData = chartCalibration.getData();
+                        if (lineData == null) return;
+                        lineData.setDrawValues(false);
+                        LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
+                        if (set == null) return;
+                        set.setDrawCircles(false);
+                        // --- REFACTOR START ---
+
+                        // 1. Add all new data points directly to the DataSet in a single loop.
+                        // This is much more efficient than adding to the LineData wrapper.
+                        for (TagData sample : newSamples) {
+                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
+                            set.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
+                        }
+
+                        // 2. Update the timestamp AFTER processing all new samples.
+                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
+
+                        // 3. Notify the chart that the underlying data has changed.
+                        lineData.notifyDataChanged();
+                        chartCalibration.notifyDataSetChanged();
+
+                        // 4. Let the chart manage its own viewport. This is the correct way
+                        // to create a scrolling "live" data chart.
+                        chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
+                        chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
+                        TagData mostRecent = newSamples.get(0);
+                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
+                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
+                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
+                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
+                        }
+
+//                        // Get the chart data and set
+//                        LineData data = chartCalibration.getData();
+//                        data.setDrawValues(false);
+//
+//                        if (data == null) return;
+//                        LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
+//                        set.setDrawCircles(false);
+//
+//                        TagData mostRecent = newSamples.get(0);
+//                        // Add every new sample to the chart
+//                        for (TagData sample : newSamples) {
+//                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
+//                            data.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi), 0);
+//                        }
+//                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
+//                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
+//                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
+//                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
+//                        }
+//                        chartCalibration.invalidate();
+//
+//                        // Update the timestamp to the newest sample received
+//                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
+//
+//                        // Notify the chart just once after adding all points
+//                        data.notifyDataChanged();
+//                        chartCalibration.notifyDataSetChanged();
+//                        chartCalibration.moveViewToX(data.getEntryCount());
+
+                        Log.i("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
+                    }
+
+                    // Reschedule the next check
+                    if (isCalibrating) {
+                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
+                    }
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.e("SettingsActivity", "Error fetching new samples", e);
+                    // Always reschedule to keep trying
+                    if (isCalibrating) {
+                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
+                    }
+                }
+            });
+        }
+    };
+
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -78,7 +189,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupSliderListeners();
         setupChart();
         loadAndObserveSettings();
-        observeCalibrationData();
+        //observeCalibrationData();
     }
 
     @Override
@@ -114,7 +225,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void setupChart() {
         chartCalibration.getDescription().setEnabled(false);
         chartCalibration.setTouchEnabled(true);
-        chartCalibration.setDragEnabled(true);
+        chartCalibration.setDragEnabled(false);
         chartCalibration.setScaleEnabled(true);
         chartCalibration.setDrawGridBackground(false);
 
@@ -187,6 +298,7 @@ public class SettingsActivity extends AppCompatActivity {
             Toast.makeText(this, "Error: Settings not loaded yet.", Toast.LENGTH_SHORT).show();
             return;
         }
+        stopCalibration();
         currentSettings.retain_samples = switchRetainSamples.isChecked();
         currentSettings.approaching_threshold = (int) sliderApproachingThreshold.getValue();
         currentSettings.arrived_threshold = (int) sliderArrivedThreshold.getValue();
@@ -224,12 +336,14 @@ public class SettingsActivity extends AppCompatActivity {
         clearChart();
         calibrationStartTime = System.currentTimeMillis();
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START));
+        calibrationHandler.post(fetchNewSamplesRunnable);
     }
 
     private void stopCalibration() {
         isCalibrating = false;
         buttonStartCalibration.setText("Start");
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
+        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
 
     private void clearChart() {
@@ -255,4 +369,11 @@ public class SettingsActivity extends AppCompatActivity {
             slider.setValue(lastRssi);
         }
     }
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // Prevent memory leaks by removing any pending runnables
+        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
+    }
+
 }

@@ -85,7 +85,7 @@ public class BleScannerService extends Service {
     private volatile float currentRssiAveragingAlpha = Setting.DEFAULT_RSSI_AVERAGING_ALPHA;
     private volatile boolean currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;
     private volatile Setting currentSettings =new Setting();
-    private volatile long  currentTagCooldownMs = 5000L;
+    private volatile long  currentTagCooldownMs = 1000L;
     private volatile  long abandonedTagTimeoutMs = 5000L;
 
     private final Map<Integer, Object> tagLockMap = new ConcurrentHashMap<>();
@@ -287,6 +287,7 @@ public class BleScannerService extends Service {
 
     private void processRawSample(int tagId, int rssi, long nowMs) {
         Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+        long start = System.currentTimeMillis();
         synchronized (tagLock){
             TagStatus statusToProcess;
             //this results in creating a new tag status if one is not in process.
@@ -351,6 +352,7 @@ public class BleScannerService extends Service {
 
             handleUIUpdates(processedStatus, nowMs);
         }
+        Log.d(TAG_SERVICE, "Finished processing tagId: " + tagId + " in " + (System.currentTimeMillis() - start));
     }
 
     private void handleUIUpdates(@NonNull TagStatus processedStatus, long sampleTimestampMs) {

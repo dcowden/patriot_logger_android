@@ -13,6 +13,7 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
 import androidx.sqlite.db.SupportSQLiteDatabase;
+import androidx.sqlite.db.SupportSQLiteStatement;
 
 import com.patriotlogger.logger.util.ThrottledLiveData;
 
@@ -83,6 +84,27 @@ public final class Repository {
 
     public LiveData<List<TagData>> getAllTagData() {
         return db.tagDataDao().liveGetAllTagData();
+    }
+
+    public void getNewTagDataSamples(long sinceTimestamp, RepositoryCallback<List<TagData>> callback) {
+        // Use the executor you already have for database writes
+        databaseWriteExecutor.execute(() -> {
+            try {
+                // Call the synchronous DAO method on a background thread
+                List<TagData> newSamples = db.tagDataDao().getNewSamplesSync(sinceTimestamp);
+
+                // Use a handler to post the result back to the main UI thread
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    callback.onSuccess(newSamples);
+                });
+
+            } catch (Exception e) {
+                // If there's an error, post the error back to the main thread
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    callback.onError(e);
+                });
+            }
+        });
     }
 
     public LiveData<DataCount> getTotalDataCount(){
