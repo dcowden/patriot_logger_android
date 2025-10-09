@@ -1,6 +1,9 @@
 package com.patriotlogger.logger.ui;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,6 +15,7 @@ import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.XAxis;
@@ -19,6 +23,7 @@ import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.patriotlogger.logger.R;
@@ -60,108 +65,25 @@ public class SettingsActivity extends AppCompatActivity {
     private boolean isCalibrating = false;
     private long calibrationStartTime = 0L;
     private float lastRssi = 0f;
+    private CalibrationUpdateReceiver calibrationUpdateReceiver;
 
-
-    // Add this Runnable to your SettingsActivity class
-    private final Runnable fetchNewSamplesRunnable = new Runnable() {
+    /**
+     * Inner class to receive raw calibration data directly from the BleScannerService.
+     * This runs on the UI thread, so it can safely update the chart.
+     */
+    private class CalibrationUpdateReceiver extends BroadcastReceiver {
         @Override
-        public void run() {
-            if (!isCalibrating) {
-                return; // Stop the loop if calibration is turned off
+        public void onReceive(Context context, Intent intent) {
+            if (intent != null && BleScannerService.ACTION_CALIBRATION_UPDATE.equals(intent.getAction())) {
+                int rssi = intent.getIntExtra(BleScannerService.EXTRA_RSSI, -100);
+                long timestamp = intent.getLongExtra(BleScannerService.EXTRA_TIMESTAMP_MS, 0);
+                lastRssi = rssi; // Keep track of the last seen RSSI
+
+                // Directly update the chart with the raw, unfiltered data
+                updateChartWithRawSample(rssi, timestamp);
             }
-
-            // Use your existing `getNewSamplesSync` method via the repository
-            // This runs on a background thread defined in your repository.
-            repository.getNewTagDataSamples(lastSampleTimestamp, new RepositoryCallback<List<TagData>>() {
-                @Override
-                public void onSuccess(List<TagData> newSamples) {
-                    if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
-                        long s = System.currentTimeMillis();
-                        Log.i("SettingsActivity", "Starring Chart Display");
-
-                        LineData lineData = chartCalibration.getData();
-                        if (lineData == null) return;
-                        lineData.setDrawValues(false);
-                        LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
-                        if (set == null) return;
-                        set.setDrawCircles(false);
-                        // --- REFACTOR START ---
-
-                        // 1. Add all new data points directly to the DataSet in a single loop.
-                        // This is much more efficient than adding to the LineData wrapper.
-                        for (TagData sample : newSamples) {
-                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-                            set.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
-                        }
-
-                        // 2. Update the timestamp AFTER processing all new samples.
-                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
-
-                        // 3. Notify the chart that the underlying data has changed.
-                        lineData.notifyDataChanged();
-                        chartCalibration.notifyDataSetChanged();
-
-                        // 4. Let the chart manage its own viewport. This is the correct way
-                        // to create a scrolling "live" data chart.
-                        chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
-                        chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
-                        TagData mostRecent = newSamples.get(0);
-                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
-                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
-                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-                        }
-
-//                        // Get the chart data and set
-//                        LineData data = chartCalibration.getData();
-//                        data.setDrawValues(false);
-//
-//                        if (data == null) return;
-//                        LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
-//                        set.setDrawCircles(false);
-//
-//                        TagData mostRecent = newSamples.get(0);
-//                        // Add every new sample to the chart
-//                        for (TagData sample : newSamples) {
-//                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-//                            data.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi), 0);
-//                        }
-//                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-//                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
-//                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
-//                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-//                        }
-//                        chartCalibration.invalidate();
-//
-//                        // Update the timestamp to the newest sample received
-//                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
-//
-//                        // Notify the chart just once after adding all points
-//                        data.notifyDataChanged();
-//                        chartCalibration.notifyDataSetChanged();
-//                        chartCalibration.moveViewToX(data.getEntryCount());
-
-                        Log.i("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
-                    }
-
-                    // Reschedule the next check
-                    if (isCalibrating) {
-                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
-                    }
-                }
-
-                @Override
-                public void onError(Exception e) {
-                    Log.e("SettingsActivity", "Error fetching new samples", e);
-                    // Always reschedule to keep trying
-                    if (isCalibrating) {
-                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
-                    }
-                }
-            });
         }
-    };
-
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -253,34 +175,6 @@ public class SettingsActivity extends AppCompatActivity {
         });
     }
 
-    private void observeCalibrationData() {
-        repository.getThrottledLiveAllTagDataDesc(SCREEN_UPDATE_RATE_MS).observe(this, tagDataList -> {
-            if (!isCalibrating || tagDataList == null || tagDataList.isEmpty()) return;
-
-            TagData mostRecent = tagDataList.get(0);
-            lastRssi = mostRecent.rssi;
-
-            float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-
-            LineData data = chartCalibration.getData();
-            if (data != null) {
-                LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
-                if (set == null) {
-                    set = createDataSet();
-                    data.addDataSet(set);
-                }
-                data.addEntry(new Entry(elapsedTimeInSeconds, lastRssi), 0);
-                data.notifyDataChanged();
-                chartCalibration.notifyDataSetChanged();
-
-                if (elapsedTimeInSeconds > 30) {
-                    chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - 30);
-                    chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-                }
-                chartCalibration.invalidate();
-            }
-        });
-    }
 
 
     private void updateUiWithSettings(Setting setting) {
@@ -326,41 +220,93 @@ public class SettingsActivity extends AppCompatActivity {
         if (isCalibrating) {
             stopCalibration();
         } else {
-            startCalibration();
+            // For simplicity, we'll assume a tag ID. In a real app, you might have a dialog to enter this.
+            int tagIdToCalibrate = 456; // Example Tag ID
+            startCalibration(tagIdToCalibrate);
         }
     }
 
-    private void startCalibration() {
+    private void startCalibration(int tagId) {
+        Log.i(TAG_ACTIVITY, "Starting calibration for tagId: " + tagId);
         isCalibrating = true;
-        buttonStartCalibration.setText("Stop");
-        clearChart();
         calibrationStartTime = System.currentTimeMillis();
-        startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START));
-        calibrationHandler.post(fetchNewSamplesRunnable);
+        buttonStartCalibration.setText(R.string.stop_calibration);
+        clearChart();
+
+        // 1. Tell the service to enter calibration mode and start broadcasting data for this tag.
+        Intent startCalibrationIntent = new Intent(this, BleScannerService.class);
+        startCalibrationIntent.setAction(BleScannerService.ACTION_START_CALIBRATION);
+        startCalibrationIntent.putExtra(BleScannerService.EXTRA_TAG_ID, tagId);
+        startService(startCalibrationIntent);
+
+        // 2. Register the receiver to listen for the broadcasts.
+        calibrationUpdateReceiver = new CalibrationUpdateReceiver();
+        IntentFilter filter = new IntentFilter(BleScannerService.ACTION_CALIBRATION_UPDATE);
+
+        // --- THE CORRECT FIX ---
+        // For apps targeting SDK 33+, you must always use the version of registerReceiver()
+        // that takes an explicit flag. We use RECEIVER_NOT_EXPORTED because this is
+        // an internal-only broadcast. This satisfies the lint check for all API levels.
+        ContextCompat.registerReceiver(this, calibrationUpdateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        // --- END OF FIX ---
     }
 
     private void stopCalibration() {
+        if (!isCalibrating) return;
+        Log.i(TAG_ACTIVITY, "Stopping calibration.");
         isCalibrating = false;
-        buttonStartCalibration.setText("Start");
-        startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
-        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
+        buttonStartCalibration.setText(R.string.start_calibration);
+
+        // 1. Unregister the receiver to stop listening for updates.
+        if (calibrationUpdateReceiver != null) {
+            try {
+                unregisterReceiver(calibrationUpdateReceiver);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG_ACTIVITY, "Receiver was not registered, ignoring.", e);
+            }
+            calibrationUpdateReceiver = null;
+        }
+
+        // 2. Tell the service to exit calibration mode.
+        Intent stopCalibrationIntent = new Intent(this, BleScannerService.class);
+        stopCalibrationIntent.setAction(BleScannerService.ACTION_STOP_CALIBRATION);
+        startService(stopCalibrationIntent);
+    }
+
+    private void updateChartWithRawSample(int rssi, long timestamp) {
+        if (!isCalibrating) return;
+
+        LineData data = chartCalibration.getData();
+        if (data == null) return;
+
+        ILineDataSet set = data.getDataSetByIndex(0);
+        // If the set is null (e.g., after clearing), create it again.
+        if (set == null) {
+            set = createNewDataSet();
+            data.addDataSet(set);
+        }
+
+        float elapsedTimeInSeconds = (timestamp - calibrationStartTime) / 1000f;
+        data.addEntry(new Entry(elapsedTimeInSeconds, rssi), 0);
+        data.notifyDataChanged();
+
+        chartCalibration.notifyDataSetChanged();
+        chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
+        chartCalibration.moveViewToX(data.getEntryCount());
     }
 
     private void clearChart() {
-        chartCalibration.setData(new LineData(createDataSet()));
+        LineData data = new LineData(createNewDataSet());
+        chartCalibration.setData(data);
         chartCalibration.invalidate();
-        calibrationStartTime = System.currentTimeMillis();
-        chartCalibration.getXAxis().setAxisMinimum(0f);
-        chartCalibration.getXAxis().setAxisMaximum(30f);
     }
 
-    private LineDataSet createDataSet() {
-        LineDataSet set = new LineDataSet(new ArrayList<>(), "RSSI");
-        set.setDrawCircles(true);
-        set.setCircleColor(Color.BLUE);
-        set.setCircleRadius(4f);
-        set.setColor(Color.BLUE);
-        set.setLineWidth(2f);
+    private LineDataSet createNewDataSet() {
+        LineDataSet set = new LineDataSet(new ArrayList<>(), "Live RSSI");
+        set.setDrawCircles(false);
+        set.setDrawValues(false);
+        set.setLineWidth(2.5f);
+        set.setColor(Color.WHITE);
         return set;
     }
 
@@ -373,7 +319,7 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         // Prevent memory leaks by removing any pending runnables
-        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
+        //calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
 
 }

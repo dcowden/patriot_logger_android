@@ -55,7 +55,12 @@ public class BleScannerService extends Service {
 
     public static final String ACTION_START = "com.patriotlogger.logger.START_SCAN";
     public static final String ACTION_STOP = "com.patriotlogger.logger.STOP_SCAN";
-
+    public static final String ACTION_START_CALIBRATION = "com.patriotlogger.logger.START_CALIBRATION";
+    public static final String ACTION_STOP_CALIBRATION = "com.patriotlogger.logger.STOP_CALIBRATION";
+    public static final String ACTION_CALIBRATION_UPDATE = "com.patriotlogger.logger.CALIBRATION_UPDATE";
+    public static final String EXTRA_TAG_ID = "com.patriotlogger.logger.EXTRA_TAG_ID";
+    public static final String EXTRA_RSSI = "com.patriotlogger.logger.EXTRA_RSSI";
+    public static final String EXTRA_TIMESTAMP_MS = "com.patriotlogger.logger.EXTRA_TIMESTAMP_MS";
 
     public static final String TAG_PREFIX = "Patriot";
     private static final String CHANNEL_ID = "scan_channel";
@@ -80,9 +85,6 @@ public class BleScannerService extends Service {
     private TagProcessor tagProcessor;
 
     // To hold current settings values, fetched from Repository
-    private volatile int currentArrivedThreshold = Setting.DEFAULT_ARRIVED_THRESHOLD;
-    private volatile int currentApproachingThreshold = Setting.DEFAULT_APPROACHING_THRESHOLD;
-    private volatile float currentRssiAveragingAlpha = Setting.DEFAULT_RSSI_AVERAGING_ALPHA;
     private volatile boolean currentRetainSamples = Setting.DEFAULT_RETAIN_SAMPLES;
     private volatile Setting currentSettings =new Setting();
     private volatile long  currentTagCooldownMs = 1000L;
@@ -92,27 +94,25 @@ public class BleScannerService extends Service {
     private final Map<Integer, TagStatus.TagStatusState> lastNotifiedStateForTrack = new ConcurrentHashMap<>();
     private Observer<Setting> settingsObserver;
 
-    // 1. CREATE THE STATIC MUTABLELIVEDATA
-    // This will be the single source of truth for the scanning state.
-    // It's private so only the service can change it.
-    private static final MutableLiveData<Boolean> _isScanning = new MutableLiveData<>(false);
+    // --- MODE FLAGS ---
+    private static volatile boolean isCalibrationMode = false;
 
-    // 2. EXPOSE IT AS A PUBLIC, NON-MUTABLE LIVEDATA
-    // This allows any part of your app to observe the state without being able to change it.
+    // --- PUBLIC STATE ---
+    private static final MutableLiveData<Boolean> _isScanning = new MutableLiveData<>(false);
     public static final LiveData<Boolean> isScanning = _isScanning;
 
     @Override
     public void onCreate() {
         super.onCreate();
         repository = Repository.get(getApplicationContext());
-        db = repository.getDatabase();
+        //db = repository.getDatabase();
 
-        tagStatusDao = db.tagStatusDao();
-        racerDao = db.racerDao();
-        tagDataDao = db.tagDataDao();
-        raceContextDao = db.raceContextDao();
+        //tagStatusDao = db.tagStatusDao();
+        //racerDao = db.racerDao();
+        //tagDataDao = db.tagDataDao();
+        //raceContextDao = db.raceContextDao();
 
-        tagProcessor = new TagProcessor();
+        tagProcessor = new TagProcessor(repository);
 
         workerThread = new HandlerThread("ble-data-processor");
         workerThread.start();
@@ -131,28 +131,42 @@ public class BleScannerService extends Service {
 
         createChannel();
         startForeground(NOTIF_ID, buildNotif("Scanner Initializing..."));
-        worker.postDelayed(this::performSweepRunnable, LOST_TRACKER_INTERVAL_MS);
+        //worker.postDelayed(this::performSweepRunnable, LOST_TRACKER_INTERVAL_MS);
         Log.i(TAG_SERVICE, "Service Created and Initialized");
     }
+
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = (intent != null) ? intent.getAction() : null;
+        if (action == null) return START_STICKY;
+
+        // --- Handle Calibration Mode ---
+        if (ACTION_START_CALIBRATION.equals(action)) {
+            isCalibrationMode = true;
+            Log.i(TAG_SERVICE, "Calibration mode ENABLED " );
+            return START_STICKY;
+        }
+        if (ACTION_STOP_CALIBRATION.equals(action)) {
+            isCalibrationMode = false;
+            Log.i(TAG_SERVICE, "Calibration mode DISABLED");
+            return START_STICKY;
+        }
+
+        // --- Handle Normal Scan ---
         if (ACTION_STOP.equals(action)) {
             notifyLine("Scanner Stopping...");
             Log.i(TAG_SERVICE, "Received stop command");
             stopSelf();
-            _isScanning.postValue(false);
             return START_NOT_STICKY;
-        }
-        else{
+        } else if (ACTION_START.equals(action)) {
             notifyLine("Scanner Starting...");
             Log.i(TAG_SERVICE, "Received start command");
             startScan();
-            _isScanning.postValue(true);
             return START_STICKY;
-
         }
+
+        return START_STICKY;
     }
 
     @Override
@@ -212,6 +226,7 @@ public class BleScannerService extends Service {
         }
         scanner.startScan(null, scanSettings, scanCallback);
         notifyLine("Scanning for Runners...");
+        _isScanning.postValue(true);
         Log.i(TAG_SERVICE, "Scan effectively started");
     }
 
@@ -220,23 +235,19 @@ public class BleScannerService extends Service {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
                     Log.w(TAG_SERVICE, "Missing BLUETOOTH_SCAN permission for stopScan. Cannot stop scan.");
-                    // Cannot call stopScan without permission on Android S+
-                    // Consider how to handle this - perhaps the service shouldn't have started.
-                    return; // Or try to stop anyway and catch SecurityException, though API docs say permission is required.
+                    return; // Can't stop if permission is missing, unfortunately.
                 }
             }
             try {
                 scanner.stopScan(scanCallback);
                 Log.i(TAG_SERVICE, "Scan stopped via API");
                 notifyLine("Scanning Paused");
-            } catch (SecurityException se) {
-                Log.e(TAG_SERVICE, "SecurityException stopping scan: " + se.getMessage(), se);
             } catch (Exception e) {
                 Log.e(TAG_SERVICE, "Error stopping scan: " + e.getMessage(), e);
             }
             scanner = null;
         }
-
+        _isScanning.postValue(false);
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -263,6 +274,7 @@ public class BleScannerService extends Service {
     private Integer getTagIdIfShouldHandle(ScanRecord sr) {
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
+        Log.d(TAG_SERVICE,"Got Device=" + deviceName);
         if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
             try {
                 return Integer.parseInt(deviceName.substring(TAG_PREFIX.length() + 1));
@@ -274,149 +286,161 @@ public class BleScannerService extends Service {
         return null;
     }
 
+
     private void handleScanResult(ScanResult result) {
         Integer tagId = getTagIdIfShouldHandle(result.getScanRecord());
         if (tagId == null) return;
 
         int rssi = result.getRssi();
         long now = System.currentTimeMillis();
-        Log.d(TAG_SERVICE, "Received scan result for tagId: " + tagId );
-        worker.post(() -> processRawSample(tagId, rssi, now));
-        Log.d(TAG_SERVICE, "Finished posting to queu for tagId: " + tagId );
-    }
-
-    private void processRawSample(int tagId, int rssi, long nowMs) {
-        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
-        long start = System.currentTimeMillis();
-        synchronized (tagLock){
-            TagStatus statusToProcess;
-            //this results in creating a new tag status if one is not in process.
-            TagStatus currentKnownStatus = tagStatusDao.getActiveStatusForTagIdSync(tagId);
-            Racer racer = racerDao.getSync(tagId);
-            String friendlyName = (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
-
-            //THIS LOGIC IS REALLY GROSS-- NEED TO REFACTOR
-            if (currentKnownStatus == null) {
-
-                TagStatus lastLoggedStatus = tagStatusDao.getLastLoggedForTagId(tagId);
-
-                if ( lastLoggedStatus != null ){
-                    //means we have logged this already-- check if it is within the cooldown window
-                    boolean isWithinCooldown = (nowMs - lastLoggedStatus.lastSeenMs) < currentTagCooldownMs;
-                    if (isWithinCooldown){
-                        Log.d(TAG_SERVICE, "tagId: " + tagId + " is within cooldown. Ignoring..");
-                        return;
-                    }
-                }
-                if ( rssi < currentSettings.approaching_threshold){
-                    Log.d(TAG_SERVICE, "Tag is not visible -- below approaching threshold" + currentSettings.approaching_threshold);
-                    return;
-                }
-                statusToProcess = new TagStatus();
-                statusToProcess.tagId = tagId;
-                statusToProcess.entryTimeMs = nowMs;
-                statusToProcess.state = TagStatus.TagStatusState.FIRST_SAMPLE;
-                statusToProcess.peakRssi = (float) rssi;
-                statusToProcess.emaRssi = (float) rssi; // Initialize EMA with the first value
-                if (friendlyName != null) {
-                    statusToProcess.friendlyName = friendlyName;
-                }
-                Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
-            } else {
-                statusToProcess = currentKnownStatus;
-            }
-            statusToProcess.friendlyName = TAG_PREFIX + "-" + tagId;
-            Log.d(TAG_SERVICE, "Update tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
-            statusToProcess.lastSeenMs = nowMs;
-
-
-            Log.d(TAG_SERVICE,"Start processSample");
-            TagStatus processedStatus = tagProcessor.processSample(
-                    statusToProcess,
-                    currentSettings,rssi,
-                    nowMs
-            );
-
-            if ( processedStatus.state == TagStatus.TagStatusState.LOGGED){
-                if (!currentSettings.retain_samples) {
-                    Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + processedStatus.trackId);
-                    tagDataDao.deleteSamplesForTrackIdSync(processedStatus.trackId);
-                }
-            }
-            processedStatus.trackId = (int) tagStatusDao.upsertSync(processedStatus);
-
-            if (processedStatus.trackId != 0 && processedStatus.isInProcess() && currentSettings.retain_samples) {
-                TagData newSample = new TagData(processedStatus.trackId, nowMs, (int) processedStatus.emaRssi);
-                tagDataDao.insert(newSample);
-            }
-
-            handleUIUpdates(processedStatus, nowMs);
+        Log.d("Handle:" + tagId, "rssi:" + rssi);
+        // FORK 1: CALIBRATION MODE
+        if (isCalibrationMode ) {
+            Intent broadcastIntent = new Intent(ACTION_CALIBRATION_UPDATE);
+            broadcastIntent.putExtra(EXTRA_TAG_ID, tagId);
+            broadcastIntent.putExtra(EXTRA_RSSI, rssi);
+            broadcastIntent.putExtra(EXTRA_TIMESTAMP_MS, now);
+            sendBroadcast(broadcastIntent);
+            return; // Done.
         }
-        Log.d(TAG_SERVICE, "Finished processing tagId: " + tagId + " in " + (System.currentTimeMillis() - start));
-    }
-
-    private void handleUIUpdates(@NonNull TagStatus processedStatus, long sampleTimestampMs) {
-
-        TagStatus.TagStatusState lastNotified = lastNotifiedStateForTrack.get(processedStatus.trackId);
-        if (processedStatus.trackId != 0 && !processedStatus.state.equals(lastNotified)) {
-            String message = null;
-            if (processedStatus.state == TagStatus.TagStatusState.APPROACHING) {
-                if (lastNotified == null) {
-                    message = displayLabel(processedStatus) + " approaching...";
-                }
-            } else if (processedStatus.state == TagStatus.TagStatusState.HERE) {
-                message = displayLabel(processedStatus) + " passing...";
-            }
-            if (message != null) {
-                notifyLine(message);
-                lastNotifiedStateForTrack.put(processedStatus.trackId, processedStatus.state);
-            }
+        else{
+            // The service's ONLY job now is to hand off the raw data.
+            worker.post(() -> tagProcessor.process(tagId, rssi, now, currentSettings));
         }
     }
 
-    private void performSweepRunnable() {
-        long now = System.currentTimeMillis();
-        List<TagStatus> activeStatuses = tagStatusDao.getAllSync();
-        if (activeStatuses == null) activeStatuses = new ArrayList<>();
-        RaceContext raceContext = raceContextDao.latestSync();
-        long gunTimeMs = (raceContext != null) ? raceContext.gunTimeMs : 0L;
+//    private void processRawSample(int tagId, int rssi, long nowMs) {
+//        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+//        long start = System.currentTimeMillis();
+//        synchronized (tagLock){
+//            TagStatus statusToProcess;
+//            //this results in creating a new tag status if one is not in process.
+//            TagStatus currentKnownStatus = tagStatusDao.getActiveStatusForTagIdSync(tagId);
+//            Racer racer = racerDao.getSync(tagId);
+//            String friendlyName = (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
+//
+//            //THIS LOGIC IS REALLY GROSS-- NEED TO REFACTOR
+//            if (currentKnownStatus == null) {
+//
+//                TagStatus lastLoggedStatus = tagStatusDao.getLastLoggedForTagId(tagId);
+//
+//                if ( lastLoggedStatus != null ){
+//                    //means we have logged this already-- check if it is within the cooldown window
+//                    boolean isWithinCooldown = (nowMs - lastLoggedStatus.lastSeenMs) < currentTagCooldownMs;
+//                    if (isWithinCooldown){
+//                        Log.d(TAG_SERVICE, "tagId: " + tagId + " is within cooldown. Ignoring..");
+//                        return;
+//                    }
+//                }
+//                if ( rssi < currentSettings.approaching_threshold){
+//                    Log.d(TAG_SERVICE, "Tag is not visible -- below approaching threshold" + currentSettings.approaching_threshold);
+//                    return;
+//                }
+//                statusToProcess = new TagStatus();
+//                statusToProcess.tagId = tagId;
+//                statusToProcess.entryTimeMs = nowMs;
+//                statusToProcess.state = TagStatus.TagStatusState.FIRST_SAMPLE;
+//                statusToProcess.peakRssi = (float) rssi;
+//                statusToProcess.emaRssi = (float) rssi; // Initialize EMA with the first value
+//                if (friendlyName != null) {
+//                    statusToProcess.friendlyName = friendlyName;
+//                }
+//                Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
+//            } else {
+//                statusToProcess = currentKnownStatus;
+//            }
+//            statusToProcess.friendlyName = TAG_PREFIX + "-" + tagId;
+//            Log.d(TAG_SERVICE, "Update tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
+//            statusToProcess.lastSeenMs = nowMs;
+//
+//
+//            Log.d(TAG_SERVICE,"Start processSample");
+//            TagStatus processedStatus = tagProcessor.processSample(
+//                    statusToProcess,
+//                    currentSettings,rssi,
+//                    nowMs
+//            );
+//
+//            if ( processedStatus.state == TagStatus.TagStatusState.LOGGED){
+//                if (!currentSettings.retain_samples) {
+//                    Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + processedStatus.trackId);
+//                    tagDataDao.deleteSamplesForTrackIdSync(processedStatus.trackId);
+//                }
+//            }
+//            processedStatus.trackId = (int) tagStatusDao.upsertSync(processedStatus);
+//
+//            if (processedStatus.trackId != 0 && processedStatus.isInProcess() && currentSettings.retain_samples) {
+//                TagData newSample = new TagData(processedStatus.trackId, nowMs, (int) processedStatus.emaRssi);
+//                tagDataDao.insert(newSample);
+//            }
+//
+//            handleUIUpdates(processedStatus, nowMs);
+//        }
+//        Log.d(TAG_SERVICE, "Finished processing tagId: " + tagId + " in " + (System.currentTimeMillis() - start));
+//    }
 
-        // Use the cached settings values
-        boolean retainSamplesSetting = this.currentRetainSamples;
+//    private void handleUIUpdates(@NonNull TagStatus processedStatus, long sampleTimestampMs) {
+//
+//        TagStatus.TagStatusState lastNotified = lastNotifiedStateForTrack.get(processedStatus.trackId);
+//        if (processedStatus.trackId != 0 && !processedStatus.state.equals(lastNotified)) {
+//            String message = null;
+//            if (processedStatus.state == TagStatus.TagStatusState.APPROACHING) {
+//                if (lastNotified == null) {
+//                    message = displayLabel(processedStatus) + " approaching...";
+//                }
+//            } else if (processedStatus.state == TagStatus.TagStatusState.HERE) {
+//                message = displayLabel(processedStatus) + " passing...";
+//            }
+//            if (message != null) {
+//                notifyLine(message);
+//                lastNotifiedStateForTrack.put(processedStatus.trackId, processedStatus.state);
+//            }
+//        }
+//    }
 
-        for (TagStatus status : activeStatuses) {
-            Object tagLock = tagLockMap.computeIfAbsent(status.tagId, k -> new Object());
-            synchronized (tagLock){
-                Log.d(TAG_SERVICE, "Inside tagLock" + System.currentTimeMillis());
-                long msSinceLastSeen = System.currentTimeMillis() - status.lastSeenMs;
-
-                if (status.state == TagStatus.TagStatusState.HERE && (msSinceLastSeen > abandonedTagTimeoutMs)) {
-                    //TODO: duplicated with TagProcessor
-
-                    List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(status.trackId);
-                    Log.w(TAG_SERVICE, "Tag" + status.tagId + " abandoned. Closing it since it was here ");
-                    status.state = TagStatus.TagStatusState.LOGGED;
-                    status.exitTimeMs = status.lastSeenMs;
-
-                    tagStatusDao.upsert(status);
-                    lastNotifiedStateForTrack.remove(status.trackId);
-
-                    long splitMs = 0;
-                    if (gunTimeMs > 0 && status.peakTimeMs > 0) {
-                        splitMs = status.peakTimeMs - gunTimeMs;
-                    }
-                    notifyLine(displayLabel(status) + " logged " + formatMmSs(splitMs));
-
-                    if (!retainSamplesSetting) {
-                        Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + status.trackId);
-                        tagDataDao.deleteSamplesForTrackIdSync(status.trackId);
-                    }
-                }
-            }
-        }
-        Log.d(TAG_SERVICE, "Performing sweep END");
-        worker.postDelayed(this::performSweepRunnable, LOST_TRACKER_INTERVAL_MS);
-    }
+//    private void performSweepRunnable() {
+//        long now = System.currentTimeMillis();
+//        List<TagStatus> activeStatuses = tagStatusDao.getAllSync();
+//        if (activeStatuses == null) activeStatuses = new ArrayList<>();
+//        RaceContext raceContext = raceContextDao.latestSync();
+//        long gunTimeMs = (raceContext != null) ? raceContext.gunTimeMs : 0L;
+//
+//        // Use the cached settings values
+//        boolean retainSamplesSetting = this.currentRetainSamples;
+//
+//        for (TagStatus status : activeStatuses) {
+//            Object tagLock = tagLockMap.computeIfAbsent(status.tagId, k -> new Object());
+//            synchronized (tagLock){
+//                Log.d(TAG_SERVICE, "Inside tagLock" + System.currentTimeMillis());
+//                long msSinceLastSeen = System.currentTimeMillis() - status.lastSeenMs;
+//
+//                if (status.state == TagStatus.TagStatusState.HERE && (msSinceLastSeen > abandonedTagTimeoutMs)) {
+//                    //TODO: duplicated with TagProcessor
+//
+//                    List<TagData> samples = tagDataDao.getSamplesForTrackIdSync(status.trackId);
+//                    Log.w(TAG_SERVICE, "Tag" + status.tagId + " abandoned. Closing it since it was here ");
+//                    status.state = TagStatus.TagStatusState.LOGGED;
+//                    status.exitTimeMs = status.lastSeenMs;
+//
+//                    tagStatusDao.upsert(status);
+//                    lastNotifiedStateForTrack.remove(status.trackId);
+//
+//                    long splitMs = 0;
+//                    if (gunTimeMs > 0 && status.peakTimeMs > 0) {
+//                        splitMs = status.peakTimeMs - gunTimeMs;
+//                    }
+//                    notifyLine(displayLabel(status) + " logged " + formatMmSs(splitMs));
+//
+//                    if (!retainSamplesSetting) {
+//                        Log.i(TAG_SERVICE, "retain_samples is false. Deleting samples for trackId: " + status.trackId);
+//                        tagDataDao.deleteSamplesForTrackIdSync(status.trackId);
+//                    }
+//                }
+//            }
+//        }
+//        Log.d(TAG_SERVICE, "Performing sweep END");
+//        worker.postDelayed(this::performSweepRunnable, LOST_TRACKER_INTERVAL_MS);
+//    }
 
     private void createChannel() {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -448,17 +472,17 @@ public class BleScannerService extends Service {
         }
     }
 
-    private String displayLabel(TagStatus s) {
-        if (s == null) return "Unknown Tag";
-        String name = (s.friendlyName != null && !s.friendlyName.isEmpty())
-                ? s.friendlyName : ("PT-" + s.tagId);
-        return name + " (#" + s.tagId + (s.trackId != 0 ? " Pass:" + s.trackId : "") + ")";
-    }
-
-    private String formatMmSs(long ms) {
-        if (ms <= 0) return "--:--.--";
-        long seconds = (ms / 1000) % 60;
-        long minutes = (ms / (1000 * 60)) % 60;
-        return String.format(Locale.US, "%d:%02d", minutes, seconds);
-    }
+//    private String displayLabel(TagStatus s) {
+//        if (s == null) return "Unknown Tag";
+//        String name = (s.friendlyName != null && !s.friendlyName.isEmpty())
+//                ? s.friendlyName : ("PT-" + s.tagId);
+//        return name + " (#" + s.tagId + (s.trackId != 0 ? " Pass:" + s.trackId : "") + ")";
+//    }
+//
+//    private String formatMmSs(long ms) {
+//        if (ms <= 0) return "--:--.--";
+//        long seconds = (ms / 1000) % 60;
+//        long minutes = (ms / (1000 * 60)) % 60;
+//        return String.format(Locale.US, "%d:%02d", minutes, seconds);
+//    }
 }

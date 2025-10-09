@@ -12,6 +12,7 @@ public class Setting {
     public static final int DEFAULT_APPROACHING_THRESHOLD = -90;
     public static final float DEFAULT_RSSI_AVERAGING_ALPHA = 0.3f;
 
+    public static final long DEFAULT_COOLDOWN_MS = 5000L;
     @PrimaryKey
     public int id = SETTINGS_ID;
 

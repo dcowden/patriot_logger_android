@@ -18,6 +18,8 @@ import androidx.sqlite.db.SupportSQLiteStatement;
 import com.patriotlogger.logger.util.ThrottledLiveData;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,7 +51,11 @@ public final class Repository {
                 })
                 .build();
     }
+    private final Map<Integer, Object> tagLockMap = new ConcurrentHashMap<>();
 
+    public Object getTagLock(int tagId) {
+        return tagLockMap.computeIfAbsent(tagId, k -> new Object());
+    }
     public static Repository get(@NonNull Context context) {
         if (instance == null) {
             synchronized (Repository.class) {
