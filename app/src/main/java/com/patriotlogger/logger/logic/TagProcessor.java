@@ -17,9 +17,10 @@ import com.patriotlogger.logger.service.BleScannerService;
 public class TagProcessor {
     private static final String TAG = "TagProcessor";
     private final Repository repository;
-
+    private final RssiSmoother smoother;
     public TagProcessor(Repository repository) {
         this.repository = repository;
+        this.smoother = new RssiSmoother();
     }
 
     /**
@@ -106,7 +107,7 @@ public class TagProcessor {
     private void updateState(TagStatus status, int rssi, @NonNull Setting settings) {
         // This is the core logic from your original TagProcessor
         if (status.state != TagStatus.TagStatusState.LOGGED) {
-            status.emaRssi = (settings.rssi_averaging_alpha * rssi) + (1 - settings.rssi_averaging_alpha) * status.emaRssi;
+            status.emaRssi = smoother.getNext(rssi, settings.rssi_averaging_alpha);
         }
 
         if (status.emaRssi > status.peakRssi) {

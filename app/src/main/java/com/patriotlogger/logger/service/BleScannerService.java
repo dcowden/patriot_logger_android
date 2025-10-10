@@ -144,22 +144,27 @@ public class BleScannerService extends Service {
         // --- Handle Calibration Mode ---
         if (ACTION_START_CALIBRATION.equals(action)) {
             isCalibrationMode = true;
-            Log.i(TAG_SERVICE, "Calibration mode ENABLED " );
+            notifyLine("Scanner Starting...");
+            Log.i(TAG_SERVICE, "Received start command");
+            startScan();
             return START_STICKY;
         }
         if (ACTION_STOP_CALIBRATION.equals(action)) {
             isCalibrationMode = false;
             Log.i(TAG_SERVICE, "Calibration mode DISABLED");
-            return START_STICKY;
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         // --- Handle Normal Scan ---
         if (ACTION_STOP.equals(action)) {
+            isCalibrationMode = false;
             notifyLine("Scanner Stopping...");
             Log.i(TAG_SERVICE, "Received stop command");
             stopSelf();
             return START_NOT_STICKY;
         } else if (ACTION_START.equals(action)) {
+            isCalibrationMode = false;
             notifyLine("Scanner Starting...");
             Log.i(TAG_SERVICE, "Received start command");
             startScan();
@@ -274,7 +279,6 @@ public class BleScannerService extends Service {
     private Integer getTagIdIfShouldHandle(ScanRecord sr) {
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
-        Log.d(TAG_SERVICE,"Got Device=" + deviceName);
         if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
             try {
                 return Integer.parseInt(deviceName.substring(TAG_PREFIX.length() + 1));

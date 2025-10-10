@@ -32,6 +32,7 @@ import com.patriotlogger.logger.data.RepositoryCallback;
 import com.patriotlogger.logger.data.RepositoryVoidCallback;
 import com.patriotlogger.logger.data.Setting;
 import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.logic.RssiSmoother;
 import com.patriotlogger.logger.service.BleScannerService;
 
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public class SettingsActivity extends AppCompatActivity {
     private long calibrationStartTime = 0L;
     private float lastRssi = 0f;
     private CalibrationUpdateReceiver calibrationUpdateReceiver;
-
+    private final RssiSmoother calibrationRssiSmoother = new RssiSmoother();
     /**
      * Inner class to receive raw calibration data directly from the BleScannerService.
      * This runs on the UI thread, so it can safely update the chart.
@@ -77,8 +78,6 @@ public class SettingsActivity extends AppCompatActivity {
             if (intent != null && BleScannerService.ACTION_CALIBRATION_UPDATE.equals(intent.getAction())) {
                 int rssi = intent.getIntExtra(BleScannerService.EXTRA_RSSI, -100);
                 long timestamp = intent.getLongExtra(BleScannerService.EXTRA_TIMESTAMP_MS, 0);
-                lastRssi = rssi; // Keep track of the last seen RSSI
-
                 // Directly update the chart with the raw, unfiltered data
                 updateChartWithRawSample(rssi, timestamp);
             }
@@ -236,7 +235,7 @@ public class SettingsActivity extends AppCompatActivity {
         // 1. Tell the service to enter calibration mode and start broadcasting data for this tag.
         Intent startCalibrationIntent = new Intent(this, BleScannerService.class);
         startCalibrationIntent.setAction(BleScannerService.ACTION_START_CALIBRATION);
-        startCalibrationIntent.putExtra(BleScannerService.EXTRA_TAG_ID, tagId);
+        //startCalibrationIntent.putExtra(BleScannerService.EXTRA_TAG_ID, tagId);
         startService(startCalibrationIntent);
 
         // 2. Register the receiver to listen for the broadcasts.
@@ -276,10 +275,13 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateChartWithRawSample(int rssi, long timestamp) {
         if (!isCalibrating) return;
 
+        float smoothedRssi = calibrationRssiSmoother.getNext(rssi, currentSettings.rssi_averaging_alpha);
+        this.lastRssi = smoothedRssi; // Update lastRssi with the smoothed value
+
         LineData data = chartCalibration.getData();
         if (data == null) return;
 
-        ILineDataSet set = data.getDataSetByIndex(0);
+        LineDataSet set = (LineDataSet)data.getDataSetByIndex(0);
         // If the set is null (e.g., after clearing), create it again.
         if (set == null) {
             set = createNewDataSet();
@@ -287,12 +289,18 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         float elapsedTimeInSeconds = (timestamp - calibrationStartTime) / 1000f;
+        Log.d("SettingsActivity", "Updating Chart, rssi=" + smoothedRssi + " tstamp=" + elapsedTimeInSeconds);
         data.addEntry(new Entry(elapsedTimeInSeconds, rssi), 0);
         data.notifyDataChanged();
 
         chartCalibration.notifyDataSetChanged();
-        chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
-        chartCalibration.moveViewToX(data.getEntryCount());
+        //chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
+        //chartCalibration.moveViewToX(elapsedTimeInSeconds);
+        if (elapsedTimeInSeconds > 30) {
+            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - 30);
+            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
+        }
+        chartCalibration.invalidate();
     }
 
     private void clearChart() {
@@ -306,7 +314,7 @@ public class SettingsActivity extends AppCompatActivity {
         set.setDrawCircles(false);
         set.setDrawValues(false);
         set.setLineWidth(2.5f);
-        set.setColor(Color.WHITE);
+        set.setColor(Color.BLUE);
         return set;
     }
 
