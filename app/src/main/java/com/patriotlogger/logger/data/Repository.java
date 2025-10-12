@@ -18,6 +18,8 @@ import androidx.sqlite.db.SupportSQLiteStatement;
 import com.patriotlogger.logger.util.ThrottledLiveData;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,7 +30,18 @@ public final class Repository {
     private final ExecutorService databaseWriteExecutor;
     private final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
 
+    private final Map<Integer, Object> tagLockMap = new ConcurrentHashMap<>();
+
     private final MutableLiveData<Boolean> areSettingsInitialized = new MutableLiveData<>(false);
+
+    private boolean savingEnabled = true;
+
+    public boolean isSavingEnabled(){
+        return savingEnabled;
+    }
+    public void setSavingEnabled(boolean newValue){
+        this.savingEnabled = newValue;
+    }
 
     private Repository(Context ctx) {
         databaseWriteExecutor = Executors.newSingleThreadExecutor();
@@ -61,6 +74,29 @@ public final class Repository {
         return instance;
     }
 
+    private TagStatus createDefaultTagStatus(int tagId){
+        TagStatus newStatus = new TagStatus();
+        newStatus.tagId = tagId;
+        newStatus.entryTimeMs = System.currentTimeMillis();
+        newStatus.state = TagStatus.TagStatusState.FIRST_SAMPLE;
+        return newStatus;
+    }
+    public TagStatus getLatestTagStatusForId(int tagId){
+        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+        TagStatus ts = null;
+
+        synchronized (tagLock){
+            ts = db.tagStatusDao().getTagStatusForTagId(tagId);
+            if ( ts == null ){
+                ts = createDefaultTagStatus(tagId);
+            }
+            ts.lastSeenMs = System.currentTimeMillis();
+            Racer racer = db.racerDao().getSync(tagId);
+            ts.friendlyName =  (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
+            return ts;
+        }
+
+    }
     // --- TagData ---
     public LiveData<List<DebugTagData>> getLiveAllDebugTagData() {
         return db.tagDataDao().liveGetAllDebugTagData();

@@ -22,6 +22,7 @@ import com.github.mikephil.charting.data.LineDataSet;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.patriotlogger.logger.R;
+import com.patriotlogger.logger.data.CalibrationTagDataBus;
 import com.patriotlogger.logger.data.Repository;
 import com.patriotlogger.logger.data.RepositoryCallback;
 import com.patriotlogger.logger.data.RepositoryVoidCallback;
@@ -43,7 +44,7 @@ public class SettingsActivity extends AppCompatActivity {
     // Add these variables to your SettingsActivity class
     private final Handler calibrationHandler =  new Handler(Looper.getMainLooper());
     private long lastSampleTimestamp = 0L;
-    private static final int CHART_UPDATE_INTERVAL_MS = 200; // Poll every 200ms
+    private static final int CHART_UPDATE_INTERVAL_MS = 20; // Poll every 200ms
     private Repository repository;
     private SwitchMaterial switchRetainSamples;
     private Slider sliderApproachingThreshold;
@@ -62,7 +63,7 @@ public class SettingsActivity extends AppCompatActivity {
     private float lastRssi = 0f;
 
 
-    // Add this Runnable to your SettingsActivity class
+    //    // Add this Runnable to your SettingsActivity class
     private final Runnable fetchNewSamplesRunnable = new Runnable() {
         @Override
         public void run() {
@@ -70,97 +71,51 @@ public class SettingsActivity extends AppCompatActivity {
                 return; // Stop the loop if calibration is turned off
             }
 
-            // Use your existing `getNewSamplesSync` method via the repository
-            // This runs on a background thread defined in your repository.
-            repository.getNewTagDataSamples(lastSampleTimestamp, new RepositoryCallback<List<TagData>>() {
-                @Override
-                public void onSuccess(List<TagData> newSamples) {
-                    if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
-                        long s = System.currentTimeMillis();
-                        Log.i("SettingsActivity", "Starring Chart Display");
-
-                        LineData lineData = chartCalibration.getData();
-                        if (lineData == null) return;
-                        lineData.setDrawValues(false);
-                        LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
-                        if (set == null) return;
-                        set.setDrawCircles(false);
-                        // --- REFACTOR START ---
-
-                        // 1. Add all new data points directly to the DataSet in a single loop.
-                        // This is much more efficient than adding to the LineData wrapper.
-                        for (TagData sample : newSamples) {
-                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-                            set.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
-                        }
-
-                        // 2. Update the timestamp AFTER processing all new samples.
-                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
-
-                        // 3. Notify the chart that the underlying data has changed.
-                        lineData.notifyDataChanged();
-                        chartCalibration.notifyDataSetChanged();
-
-                        // 4. Let the chart manage its own viewport. This is the correct way
-                        // to create a scrolling "live" data chart.
-                        chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
-                        chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
-                        TagData mostRecent = newSamples.get(0);
-                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
-                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
-                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-                        }
-
-//                        // Get the chart data and set
-//                        LineData data = chartCalibration.getData();
-//                        data.setDrawValues(false);
-//
-//                        if (data == null) return;
-//                        LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
-//                        set.setDrawCircles(false);
-//
-//                        TagData mostRecent = newSamples.get(0);
-//                        // Add every new sample to the chart
-//                        for (TagData sample : newSamples) {
-//                            float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-//                            data.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi), 0);
-//                        }
-//                        float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-//                        if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
-//                            chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
-//                            chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-//                        }
-//                        chartCalibration.invalidate();
-//
-//                        // Update the timestamp to the newest sample received
-//                        lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
-//
-//                        // Notify the chart just once after adding all points
-//                        data.notifyDataChanged();
-//                        chartCalibration.notifyDataSetChanged();
-//                        chartCalibration.moveViewToX(data.getEntryCount());
-
-                        Log.i("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
-                    }
-
-                    // Reschedule the next check
-                    if (isCalibrating) {
-                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
-                    }
-                }
-
-                @Override
-                public void onError(Exception e) {
-                    Log.e("SettingsActivity", "Error fetching new samples", e);
-                    // Always reschedule to keep trying
-                    if (isCalibrating) {
-                        calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
-                    }
+            CalibrationTagDataBus.getData().observe(SettingsActivity.this,tagDataList -> {
+                List<TagData> pending = CalibrationTagDataBus.consumeAll();
+                if (!pending.isEmpty()) {
+                    processSamples(pending);
                 }
             });
+            if (isCalibrating) {
+                calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
+            }
         }
     };
+
+    protected void processSamples( List<TagData> newSamples){
+        if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
+            long s = System.currentTimeMillis();
+            Log.i("SettingsActivity", "Starring Chart Display");
+
+            LineData lineData = chartCalibration.getData();
+            if (lineData == null) return;
+            lineData.setDrawValues(false);
+            LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
+            for (TagData sample : newSamples) {
+                float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
+                set.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
+                lastRssi = sample.rssi;
+            }
+
+            lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
+
+            lineData.notifyDataChanged();
+            chartCalibration.notifyDataSetChanged();
+
+            chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
+            chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
+            TagData mostRecent = newSamples.get(0);
+            float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
+            if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
+                chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
+                chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
+            }
+
+            Log.i("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
+        }
+
+    }
 
 
     @Override
@@ -230,7 +185,7 @@ public class SettingsActivity extends AppCompatActivity {
         chartCalibration.setDrawGridBackground(false);
 
         YAxis leftAxis = chartCalibration.getAxisLeft();
-        leftAxis.setAxisMaximum(-30f);
+        leftAxis.setAxisMaximum(-25f);
         leftAxis.setAxisMinimum(-100f);
 
         chartCalibration.getAxisRight().setEnabled(false);
@@ -249,35 +204,6 @@ public class SettingsActivity extends AppCompatActivity {
                 currentSettings = setting;
                 updateUiWithSettings(setting);
                 buttonSaveChanges.setEnabled(true);
-            }
-        });
-    }
-
-    private void observeCalibrationData() {
-        repository.getThrottledLiveAllTagDataDesc(SCREEN_UPDATE_RATE_MS).observe(this, tagDataList -> {
-            if (!isCalibrating || tagDataList == null || tagDataList.isEmpty()) return;
-
-            TagData mostRecent = tagDataList.get(0);
-            lastRssi = mostRecent.rssi;
-
-            float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
-
-            LineData data = chartCalibration.getData();
-            if (data != null) {
-                LineDataSet set = (LineDataSet) data.getDataSetByIndex(0);
-                if (set == null) {
-                    set = createDataSet();
-                    data.addDataSet(set);
-                }
-                data.addEntry(new Entry(elapsedTimeInSeconds, lastRssi), 0);
-                data.notifyDataChanged();
-                chartCalibration.notifyDataSetChanged();
-
-                if (elapsedTimeInSeconds > 30) {
-                    chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - 30);
-                    chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
-                }
-                chartCalibration.invalidate();
             }
         });
     }
@@ -332,6 +258,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void startCalibration() {
         isCalibrating = true;
+        repository.setSavingEnabled(false);
         buttonStartCalibration.setText("Stop");
         clearChart();
         calibrationStartTime = System.currentTimeMillis();
@@ -341,6 +268,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void stopCalibration() {
         isCalibrating = false;
+        repository.setSavingEnabled(true);
         buttonStartCalibration.setText("Start");
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
         calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
@@ -357,14 +285,15 @@ public class SettingsActivity extends AppCompatActivity {
     private LineDataSet createDataSet() {
         LineDataSet set = new LineDataSet(new ArrayList<>(), "RSSI");
         set.setDrawCircles(true);
-        set.setCircleColor(Color.BLUE);
-        set.setCircleRadius(4f);
-        set.setColor(Color.BLUE);
+        set.setCircleColor(Color.RED);
+        set.setCircleRadius(3f);
+        set.setColor(Color.RED);
         set.setLineWidth(2f);
         return set;
     }
 
     private void setSliderFromLastRssi(Slider slider) {
+        Log.d(TAG_ACTIVITY, "Setting Slider lastRssi = " + lastRssi);
         if (isCalibrating && lastRssi != 0f) {
             slider.setValue(lastRssi);
         }

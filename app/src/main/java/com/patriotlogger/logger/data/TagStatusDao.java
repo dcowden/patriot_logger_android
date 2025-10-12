@@ -89,11 +89,11 @@ public interface TagStatusDao {
     @Query("SELECT * FROM tag_status WHERE trackId = :trackId LIMIT 1")
     TagStatus getByTrackIdSync(int trackId);
 
-    @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'APPROACHING' OR state = 'HERE') ORDER BY trackId DESC LIMIT 1")
-    TagStatus getActiveStatusForTagIdSync(int tagId);
+    //@Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'APPROACHING' OR state = 'HERE') ORDER BY trackId DESC LIMIT 1")
+    //TagStatus getActiveStatusForTagIdSync(int tagId);
 
     @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'LOGGED' ) ORDER BY trackId DESC LIMIT 1")
-    TagStatus getLastLoggedForTagId(int tagId);
+    TagStatus getTagStatusForTagId(int tagId);
 
 
     @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND state IN (:states) ORDER BY trackId DESC")
