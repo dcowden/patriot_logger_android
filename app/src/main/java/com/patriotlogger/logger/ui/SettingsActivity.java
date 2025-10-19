@@ -1,6 +1,8 @@
 package com.patriotlogger.logger.ui;
 
+import com.patriotlogger.logger.logic.RssiSmoother;
 import android.content.Intent;
+import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -10,8 +12,10 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.AttrRes;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.Observer;
 
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.XAxis;
@@ -22,6 +26,7 @@ import com.github.mikephil.charting.data.LineDataSet;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.patriotlogger.logger.R;
+import com.patriotlogger.logger.data.CalibrationSample;
 import com.patriotlogger.logger.data.CalibrationTagDataBus;
 import com.patriotlogger.logger.data.Repository;
 import com.patriotlogger.logger.data.RepositoryCallback;
@@ -38,13 +43,11 @@ import java.util.Locale;
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String TAG_ACTIVITY = "SettingsActivity";
-    public static final int SCREEN_UPDATE_RATE_MS = 200;
     public static final int GRAPH_MAX_SECS = 30;
 
-    // Add these variables to your SettingsActivity class
     private final Handler calibrationHandler =  new Handler(Looper.getMainLooper());
     private long lastSampleTimestamp = 0L;
-    private static final int CHART_UPDATE_INTERVAL_MS = 20; // Poll every 200ms
+    private static final int CHART_UPDATE_INTERVAL_MS = 50;
     private Repository repository;
     private SwitchMaterial switchRetainSamples;
     private Slider sliderApproachingThreshold;
@@ -60,30 +63,9 @@ public class SettingsActivity extends AppCompatActivity {
     private Setting currentSettings;
     private boolean isCalibrating = false;
     private long calibrationStartTime = 0L;
-    private float lastRssi = 0f;
-
-
-    //    // Add this Runnable to your SettingsActivity class
-    private final Runnable fetchNewSamplesRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (!isCalibrating) {
-                return; // Stop the loop if calibration is turned off
-            }
-
-            CalibrationTagDataBus.getData().observe(SettingsActivity.this,tagDataList -> {
-                List<TagData> pending = CalibrationTagDataBus.consumeAll();
-                if (!pending.isEmpty()) {
-                    processSamples(pending);
-                }
-            });
-            if (isCalibrating) {
-                calibrationHandler.postDelayed(fetchNewSamplesRunnable, CHART_UPDATE_INTERVAL_MS);
-            }
-        }
-    };
-
-    protected void processSamples( List<TagData> newSamples){
+    //private float lastRssi = 0f;
+    private RssiSmoother calibrationSmoother;
+    protected void processSamples( List<CalibrationSample> newSamples){
         if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
             long s = System.currentTimeMillis();
             Log.i("SettingsActivity", "Starring Chart Display");
@@ -92,10 +74,11 @@ public class SettingsActivity extends AppCompatActivity {
             if (lineData == null) return;
             lineData.setDrawValues(false);
             LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
-            for (TagData sample : newSamples) {
+            for (CalibrationSample sample : newSamples) {
+                float smoothedRssi = calibrationSmoother.getSmoothedRssi(sample.rssi, currentSettings);
                 float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-                set.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
-                lastRssi = sample.rssi;
+                set.addEntry(new Entry(elapsedTimeInSeconds, smoothedRssi));
+
             }
 
             lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
@@ -105,7 +88,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
             chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
-            TagData mostRecent = newSamples.get(0);
+            CalibrationSample mostRecent = newSamples.get(0);
             float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
             if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
                 chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
@@ -117,6 +100,13 @@ public class SettingsActivity extends AppCompatActivity {
 
     }
 
+    private final Observer<List<CalibrationSample>> calibrationObserver = tagDataList -> {
+        if (!isCalibrating) return;
+        List<CalibrationSample> pending = CalibrationTagDataBus.consumeAll();
+        if (!pending.isEmpty()) {
+            processSamples(pending);
+        }
+    };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -140,11 +130,14 @@ public class SettingsActivity extends AppCompatActivity {
         buttonClearCalibration = findViewById(R.id.buttonClearCalibration);
         chartCalibration = findViewById(R.id.chartCalibration);
 
+        CalibrationTagDataBus.getData().observe(this, calibrationObserver);
+
+        calibrationSmoother = new RssiSmoother();
         setupButtons();
         setupSliderListeners();
         setupChart();
         loadAndObserveSettings();
-        //observeCalibrationData();
+
     }
 
     @Override
@@ -177,24 +170,58 @@ public class SettingsActivity extends AppCompatActivity {
         // });
     }
 
+
     private void setupChart() {
-        chartCalibration.getDescription().setEnabled(false);
+        // --- THEME-AWARE COLOR SETUP ---
+        // 1. Resolve the correct colors from the current theme (light or dark).
+
+        // For axes and labels, use the standard Android attribute for primary text color.
+        // This is guaranteed to be readable on the default window background.
+        int axisColor = getThemeColor(android.R.attr.textColorPrimary);
+
+        // For the data line and circles, use the theme's primary accent color.
+        // This is typically light in dark mode and dark in light mode.
+        int dataSetColor = getThemeColor(androidx.appcompat.R.attr.colorPrimary);
+
+        // --- GENERAL CHART SETUP ---
+        chartCalibration.getDescription().setEnabled(true);
+        chartCalibration.getDescription().setText("RSSI over Time");
+        chartCalibration.getDescription().setTextColor(axisColor);
         chartCalibration.setTouchEnabled(true);
         chartCalibration.setDragEnabled(false);
         chartCalibration.setScaleEnabled(true);
         chartCalibration.setDrawGridBackground(false);
+        chartCalibration.getLegend().setTextColor(axisColor);
 
+        // --- Y-AXIS (LEFT) SETUP ---
         YAxis leftAxis = chartCalibration.getAxisLeft();
         leftAxis.setAxisMaximum(-25f);
         leftAxis.setAxisMinimum(-100f);
+        leftAxis.setTextColor(axisColor); // Use theme color for labels
+        leftAxis.setGridColor(axisColor); // Use theme color for grid lines
+        leftAxis.setAxisLineColor(axisColor); // Use theme color for the axis line itself
 
+        // --- Y-AXIS (RIGHT) SETUP ---
         chartCalibration.getAxisRight().setEnabled(false);
 
+        // --- X-AXIS (BOTTOM) SETUP ---
         XAxis xAxis = chartCalibration.getXAxis();
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM); // Ensure X-axis is at the bottom
         xAxis.setAxisMinimum(0f);
-        xAxis.setAxisMaximum(30f);
+        xAxis.setAxisMaximum(GRAPH_MAX_SECS);
+        xAxis.setTextColor(axisColor); // Use theme color for labels
+        xAxis.setGridColor(axisColor); // Use theme color for grid lines
+        xAxis.setAxisLineColor(axisColor); // Use theme color for the axis line itself
 
         clearChart();
+    }
+
+    private int getThemeColor(@AttrRes int colorAttr) {
+        // 'this' refers to the Activity context
+        TypedArray ta = this.getTheme().obtainStyledAttributes(new int[]{colorAttr});
+        int color = ta.getColor(0, Color.BLACK); // Default to black if not found
+        ta.recycle(); // Always recycle TypedArray
+        return color;
     }
 
     private void loadAndObserveSettings() {
@@ -263,7 +290,7 @@ public class SettingsActivity extends AppCompatActivity {
         clearChart();
         calibrationStartTime = System.currentTimeMillis();
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START));
-        calibrationHandler.post(fetchNewSamplesRunnable);
+        //calibrationHandler.post(fetchNewSamplesRunnable);
     }
 
     private void stopCalibration() {
@@ -271,7 +298,7 @@ public class SettingsActivity extends AppCompatActivity {
         repository.setSavingEnabled(true);
         buttonStartCalibration.setText("Start");
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
-        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
+        //calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
 
     private void clearChart() {
@@ -293,16 +320,18 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void setSliderFromLastRssi(Slider slider) {
-        Log.d(TAG_ACTIVITY, "Setting Slider lastRssi = " + lastRssi);
-        if (isCalibrating && lastRssi != 0f) {
-            slider.setValue(lastRssi);
+        float lastRssi = calibrationSmoother.getLastRssi();
+        int roundedRssi = Math.round(lastRssi);
+        Log.d(TAG_ACTIVITY, "Setting Slider lastRssi = " + roundedRssi);
+        if (isCalibrating && roundedRssi != 0) {
+            slider.setValue(roundedRssi);
         }
     }
     @Override
     protected void onDestroy() {
         super.onDestroy();
         // Prevent memory leaks by removing any pending runnables
-        calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
+        //calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
 
 }

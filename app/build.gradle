@@ -78,8 +78,9 @@ dependencies {
 
     testImplementation libs.junit
     testImplementation libs.mockito.core // Added Mockito core
-
+    testImplementation 'org.mockito:mockito-inline:5.2.0' // <-- needed for static mocking
     androidTestImplementation libs.androidx.junit
     androidTestImplementation libs.androidx.espresso.core
+    androidTestImplementation 'org.mockito:mockito-android:5.20.0'
 
 }

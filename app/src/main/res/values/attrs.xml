@@ -1,3 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Define an attribute for the primary text and axis color.
+      This name can be used throughout your app to reference the correct
+      color for the current theme (light or dark).
+    -->
+    <attr name="chartAxisColor" format="color" />
 </resources>

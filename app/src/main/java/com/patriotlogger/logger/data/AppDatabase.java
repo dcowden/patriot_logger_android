@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase;
 import androidx.room.TypeConverters;
 
 // Schema changed, incremented version to 9
-@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, Setting.class, TagData.class}, version = 9)
+@Database(entities = {TagStatus.class, Racer.class, RaceContext.class, Setting.class, TagData.class}, version = 10)
 @TypeConverters({TagStatusStateConverter.class})
 public abstract class AppDatabase extends RoomDatabase {
     public abstract TagStatusDao tagStatusDao();

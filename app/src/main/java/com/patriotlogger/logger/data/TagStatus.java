@@ -13,16 +13,30 @@ import androidx.room.TypeConverters;
 public class TagStatus {
 
     public enum TagStatusState {
-        FIRST_SAMPLE, 
+        FIRST_SAMPLE,
+        TOO_FAR,
         APPROACHING, 
         HERE,        
-        LOGGED       
+        LOGGED   ,
+        TIMED_OUT
     }
 
     @PrimaryKey(autoGenerate = true)
     public int trackId;
 
     public int tagId;
+
+
+    /**
+     * Stores the previous EMA RSSI value to check for an increasing trend.
+     */
+    public float previousEmaRssi = 0.0f;
+
+    /**
+     * Counts consecutive samples where the EMA RSSI is increasing.
+     * Reset whenever the trend breaks or a state change occurs.
+     */
+    public int consecutiveRssiIncreases = 0;
 
     public String friendlyName = "";
     public long entryTimeMs = 0L;

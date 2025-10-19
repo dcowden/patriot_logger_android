@@ -16,6 +16,8 @@
         <!-- If you’re using a Toolbar, you don’t need a legacy ActionBar -->
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
+
+        <item name="chartAxisColor">@android:color/black</item>
     </style>
 
     <!-- Optional variant; already no-action-bar via parent, but kept if you reference it -->

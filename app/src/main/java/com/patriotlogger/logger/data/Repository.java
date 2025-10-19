@@ -3,7 +3,6 @@ package com.patriotlogger.logger.data;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -13,7 +12,6 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
 import androidx.sqlite.db.SupportSQLiteDatabase;
-import androidx.sqlite.db.SupportSQLiteStatement;
 
 import com.patriotlogger.logger.util.ThrottledLiveData;
 
@@ -34,7 +32,7 @@ public final class Repository {
 
     private final MutableLiveData<Boolean> areSettingsInitialized = new MutableLiveData<>(false);
 
-    private boolean savingEnabled = true;
+    private volatile boolean savingEnabled = true;
 
     public boolean isSavingEnabled(){
         return savingEnabled;
@@ -74,10 +72,11 @@ public final class Repository {
         return instance;
     }
 
-    private TagStatus createDefaultTagStatus(int tagId){
+    private TagStatus createNewTagStatus(int tagId){
         TagStatus newStatus = new TagStatus();
         newStatus.tagId = tagId;
         newStatus.entryTimeMs = System.currentTimeMillis();
+        newStatus.lastSeenMs = System.currentTimeMillis();
         newStatus.state = TagStatus.TagStatusState.FIRST_SAMPLE;
         return newStatus;
     }
@@ -86,62 +85,84 @@ public final class Repository {
         TagStatus ts = null;
 
         synchronized (tagLock){
+            boolean needsInsert = false;
             ts = db.tagStatusDao().getTagStatusForTagId(tagId);
             if ( ts == null ){
-                ts = createDefaultTagStatus(tagId);
+                ts = createNewTagStatus(tagId);
+                needsInsert = true;
             }
             ts.lastSeenMs = System.currentTimeMillis();
-            Racer racer = db.racerDao().getSync(tagId);
-            ts.friendlyName =  (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : null;
+            ts.friendlyName =  resolveFriendlyName(tagId);
+            if ( needsInsert){
+                long newId = db.tagStatusDao().insertSync(ts);
+                ts.trackId = (int)newId;
+            }
+
             return ts;
         }
 
     }
+
+    private String resolveFriendlyName(int tagId) {
+        Racer racer = db.racerDao().getSync(tagId);
+        return (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : "";
+    }
+
+
+
+    public List<TagData> getSamplesForTrackIdSync(int trackId) {
+       return  db.tagDataDao().getSamplesForTrackIdSync(trackId);
+    }
+
+    public List<TagStatus> getAllActiveTagsSync(){
+        return db.tagStatusDao().getAllActiveSync();
+    }
+
     // --- TagData ---
     public LiveData<List<DebugTagData>> getLiveAllDebugTagData() {
         return db.tagDataDao().liveGetAllDebugTagData();
     }
 
-    public LiveData<List<TagData>> getLiveAllTagDataDesc() {
-        return db.tagDataDao().liveGetAllTagDataDesc();
-    }
-
-    public LiveData<List<TagData>> getThrottledLiveAllTagDataDesc(long throttleMs) {
-        return new ThrottledLiveData<>(db.tagDataDao().liveGetAllTagDataDesc(), throttleMs);
-    }
+//    public LiveData<List<TagData>> getLiveAllTagDataDesc() {
+//        return db.tagDataDao().liveGetAllTagDataDesc();
+//    }
+//
+//    public LiveData<List<TagData>> getThrottledLiveAllTagDataDesc(long throttleMs) {
+//        return new ThrottledLiveData<>(db.tagDataDao().liveGetAllTagDataDesc(), throttleMs);
+//    }
 
     public void insertTagData(TagData tagData) {
         databaseWriteExecutor.execute(() -> db.tagDataDao().insert(tagData));
     }
 
-    public LiveData<List<TagData>> getSamplesForTrackId(int trackId) {
-        return db.tagDataDao().liveGetSamplesForTrackId(trackId);
-    }
-
-    public LiveData<List<TagData>> getAllTagData() {
-        return db.tagDataDao().liveGetAllTagData();
-    }
-
-    public void getNewTagDataSamples(long sinceTimestamp, RepositoryCallback<List<TagData>> callback) {
-        // Use the executor you already have for database writes
-        databaseWriteExecutor.execute(() -> {
-            try {
-                // Call the synchronous DAO method on a background thread
-                List<TagData> newSamples = db.tagDataDao().getNewSamplesSync(sinceTimestamp);
-
-                // Use a handler to post the result back to the main UI thread
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    callback.onSuccess(newSamples);
-                });
-
-            } catch (Exception e) {
-                // If there's an error, post the error back to the main thread
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    callback.onError(e);
-                });
-            }
-        });
-    }
+//    public LiveData<List<TagData>> getSamplesForTrackId(int trackId) {
+//        return db.tagDataDao().liveGetSamplesForTrackId(trackId);
+//    }
+//
+//    public LiveData<List<TagData>> getAllTagData() {
+//        return db.tagDataDao().liveGetAllTagData();
+//    }
+//
+//    public void getNewTagDataSamples(long sinceTimestamp, RepositoryCallback<List<TagData>> callback) {
+//        // Use the executor you already have for database writes
+//        databaseWriteExecutor.execute(() -> {
+//            try {
+//                // Call the synchronous DAO method on a background thread
+//                List<TagData> newSamples = db.tagDataDao().getNewSamplesSync(sinceTimestamp);
+//
+//                // Use a handler to post the result back to the main UI thread
+//                new Handler(Looper.getMainLooper()).post(() -> {
+//                    callback.onSuccess(newSamples);
+//                });
+//
+//            } catch (Exception e) {
+//                // If there's an error, post the error back to the main thread
+//                new Handler(Looper.getMainLooper()).post(() -> {
+//                    callback.onError(e);
+//                });
+//            }
+//        });
+//    }
 
     public LiveData<DataCount> getTotalDataCount(){
         MediatorLiveData<DataCount> mediatorLiveData = new MediatorLiveData<>();
@@ -165,25 +186,23 @@ public final class Repository {
         return mediatorLiveData;
 
     }
-    public LiveData<Integer> getTotalSamplesCount() {
-        return db.tagDataDao().getTotalSamplesCount();
-    }
+//    public LiveData<Integer> getTotalSamplesCount() {
+//        return db.tagDataDao().getTotalSamplesCount();
+//    }
 
     public void deleteSamplesForTrackId(int trackId) {
         databaseWriteExecutor.execute(() -> db.tagDataDao().deleteSamplesForTrackIdSync(trackId));
     }
 
-    // --- The rest of your Repository code... ---
-
     public AppDatabase getDatabase() {
         return db;
     }
 
-    public void shutdownExecutor() {
-        if (databaseWriteExecutor != null && !databaseWriteExecutor.isShutdown()) {
-            databaseWriteExecutor.shutdown();
-        }
-    }
+//    public void shutdownExecutor() {
+//        if (databaseWriteExecutor != null && !databaseWriteExecutor.isShutdown()) {
+//            databaseWriteExecutor.shutdown();
+//        }
+//    }
 
     private void initializeDefaultSettingsInDbInternal() {
         Setting currentDbSetting = db.settingDao().getConfigSync(Setting.SETTINGS_ID);
@@ -209,26 +228,28 @@ public final class Repository {
         return db.tagStatusDao().liveAll();
     }
 
-    public LiveData<List<TagStatus>> getThrottledAllTagStatuses(long throttleMs) {
-        return new ThrottledLiveData<>(db.tagStatusDao().liveAll(), throttleMs);
-    }
+//    public LiveData<List<TagStatus>> getThrottledAllTagStatuses(long throttleMs) {
+//        return new ThrottledLiveData<>(db.tagStatusDao().liveAll(), throttleMs);
+//    }
+//
+//    public LiveData<TagStatus> getTagStatusByTrackId(int trackId) {
+//        return db.tagStatusDao().liveGetByTrackId(trackId);
+//    }
+//
+//    public LiveData<TagStatus> getActiveTagStatusForTagId(int tagId) {
+//        return db.tagStatusDao().liveGetActiveStatusForTagId(tagId);
+//    }
 
-    public LiveData<TagStatus> getTagStatusByTrackId(int trackId) {
-        return db.tagStatusDao().liveGetByTrackId(trackId);
-    }
-
-    public LiveData<TagStatus> getActiveTagStatusForTagId(int tagId) {
-        return db.tagStatusDao().liveGetActiveStatusForTagId(tagId);
-    }
-
-    public void upsertTagStatus(TagStatus s) {
-        databaseWriteExecutor.execute(() -> db.tagStatusDao().upsert(s));
-    }
-
-    public void upsertTagStatus(TagStatus s, @Nullable RepositoryCallback<Long> callback) {
+    public void upsertTagStatus(TagStatus s, boolean deleteSamples, @Nullable RepositoryCallback<Long> callback) {
         databaseWriteExecutor.execute(() -> {
             try {
                 long rowId = db.tagStatusDao().upsertSync(s);
+                if ( s.state == TagStatus.TagStatusState.LOGGED){
+                    if (deleteSamples) {
+                        deleteSamplesForTrackId(s.trackId);
+                    }
+                }
+
                 if (callback != null) mainThreadHandler.post(() -> callback.onSuccess(rowId));
             } catch (Exception e) {
                 if (callback != null) mainThreadHandler.post(() -> callback.onError(e));
@@ -317,9 +338,9 @@ public final class Repository {
         });
     }
 
-    public void upsertConfig(Setting setting) {
-        upsertConfig(setting, null);
-    }
+    //public void upsertConfig(Setting setting) {
+//        upsertConfig(setting, null);
+//    }
 
     public void clearAllData(boolean clearSettings,@Nullable RepositoryVoidCallback callback) {
         databaseWriteExecutor.execute(() -> {
@@ -339,7 +360,7 @@ public final class Repository {
         });
     }
 
-    public void clearAllData(boolean clearSettings) {
-        clearAllData(clearSettings, null);
-    }
+//    public void clearAllData(boolean clearSettings) {
+//        clearAllData(clearSettings, null);
+//    }
 }

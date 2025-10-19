@@ -86,13 +86,16 @@ public interface TagStatusDao {
     @Query("SELECT * FROM tag_status ORDER BY trackId DESC")
     List<TagStatus> getAllSync();
 
+    @Query("SELECT * FROM tag_status WHERE state IN ('APPROACHING','HERE' )ORDER BY trackId DESC")
+    List<TagStatus> getAllActiveSync();
+
     @Query("SELECT * FROM tag_status WHERE trackId = :trackId LIMIT 1")
     TagStatus getByTrackIdSync(int trackId);
 
     //@Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'APPROACHING' OR state = 'HERE') ORDER BY trackId DESC LIMIT 1")
     //TagStatus getActiveStatusForTagIdSync(int tagId);
 
-    @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND (state = 'LOGGED' ) ORDER BY trackId DESC LIMIT 1")
+    @Query("SELECT * FROM tag_status WHERE tagId = :tagId AND state IN ('FIRST_SAMPLE','TOO_FAR','APPROACHING','HERE') ORDER BY trackId DESC LIMIT 1")
     TagStatus getTagStatusForTagId(int tagId);
 
 
