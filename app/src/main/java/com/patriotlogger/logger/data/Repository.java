@@ -104,8 +104,9 @@ public final class Repository {
     }
 
     private String resolveFriendlyName(int tagId) {
-        Racer racer = db.racerDao().getSync(tagId);
-        return (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : "";
+        //Racer racer = db.racerDao().getSync(tagId);
+        //return (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : "";
+        return String.format("PT-%d",tagId);
     }
 
 

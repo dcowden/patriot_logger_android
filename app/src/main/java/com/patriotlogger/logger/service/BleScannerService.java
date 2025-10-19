@@ -239,7 +239,7 @@ public class BleScannerService extends Service {
 
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
-        //Log.d(TAG_SERVICE, "Received scan result for device: " + deviceName );
+        Log.d(TAG_SERVICE, "Received scan result for device: " + deviceName );
         if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
             try {
                 return Integer.parseInt(deviceName.substring(TAG_PREFIX.length() + 1));

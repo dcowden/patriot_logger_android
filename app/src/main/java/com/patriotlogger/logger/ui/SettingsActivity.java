@@ -76,8 +76,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Setting currentSettings;
     private boolean isCalibrating = false;
     private long calibrationStartTime = 0L;
-    //private float lastRssi = 0f;
-    private RssiSmoother calibrationSmoother;
+
+    private float lastSmoothedRssi = 0.0f;
     protected void processSamples( List<CalibrationSample> newSamples){
         if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
             long s = System.currentTimeMillis();
@@ -89,10 +89,14 @@ public class SettingsActivity extends AppCompatActivity {
             LineDataSet smoothedSet = (LineDataSet) lineData.getDataSetByIndex(1);
             LineDataSet rawSet = (LineDataSet) lineData.getDataSetByIndex(0);
             for (CalibrationSample sample : newSamples) {
+                Log.d("SettingsActivity", "charting sample: " + sample);
+
                 float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
 
                 rawSet.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
                 smoothedSet.addEntry(new Entry(elapsedTimeInSeconds, sample.smoothedRssi));
+
+                lastSmoothedRssi = sample.smoothedRssi;
             }
 
             lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
@@ -147,7 +151,6 @@ public class SettingsActivity extends AppCompatActivity {
 
         CalibrationTagDataBus.getData().observe(this, calibrationObserver);
 
-        calibrationSmoother = new RssiSmoother();
         setupButtons();
         setupSliderListeners();
         setupChart();
@@ -346,9 +349,9 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void setSliderFromLastRssi(Slider slider) {
-        float lastRssi = calibrationSmoother.getLastRssi();
-        int roundedRssi = Math.round(lastRssi);
-        Log.d(TAG_ACTIVITY, "Setting Slider lastRssi = " + roundedRssi);
+
+        int roundedRssi = Math.round(lastSmoothedRssi);
+        Log.w(TAG_ACTIVITY, "Setting Slider lastRssi = " + roundedRssi);
         if (isCalibrating && roundedRssi != 0) {
             slider.setValue(roundedRssi);
         }
