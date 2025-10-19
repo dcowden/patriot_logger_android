@@ -13,11 +13,17 @@ public class TagProcessor {
 
     private final TagPeakFinder peakFinder;
 
+    // kept but no longer used for transitions (we only use dwell now)
     private static final int SAMPLES_TO_CONFIRM_STATE = 3;
     private static final float EXIT_HYSTERESIS_DB = 1.0f;
-    private static final float MIN_EMA_DELTA = 1.0f;
+    private static final float MIN_EMA_DELTA = 0.1f;
 
-    private RssiSmoother rssiSmoother = new RssiSmoother();
+    // Dwell-time hold for transitions
+    private static final long HOLD_MS = 1000L; // 1 second
+
+    // Per-target-state dwell timers (so the helper can be reused)
+    private long approachGateStartMs = 0L; // for transitions targeting APPROACHING
+    private long arrivedGateStartMs  = 0L; // for transitions targeting HERE
 
     public TagProcessor(TagPeakFinder peakFinder) {
         this.peakFinder = peakFinder;
@@ -59,8 +65,10 @@ public class TagProcessor {
         } else {
             //status.emaRssi = (settings.rssi_averaging_alpha * rawRssi)
             //        + ((1 - settings.rssi_averaging_alpha) * status.emaRssi);
-            status.emaRssi = RssiSmoother.computeSmoothedRssi(rawRssi,status.emaRssi,settings.rssi_averaging_alpha);
+            status.emaRssi = RssiSmoother.computeSmoothedRssi(rawRssi, status.emaRssi, settings.rssi_averaging_alpha);
         }
+        Log.i(TAG, String.format("updateSmoothedRssi: raw=%d, prev=%.2f, ema=%.2f, delta=%.2f",
+                rawRssi, status.previousEmaRssi, status.emaRssi, status.emaRssi - status.previousEmaRssi));
     }
 
     private void updateRawPeakIfApplicable(@NonNull TagStatus status, int rawRssi, long nowMs) {
@@ -77,27 +85,48 @@ public class TagProcessor {
         switch (status.state) {
             case FIRST_SAMPLE:
                 status.state = TagStatus.TagStatusState.TOO_FAR;
+                Log.d(TAG, "State: FIRST_SAMPLE -> TOO_FAR");
+                resetDwellTimers();
                 break;
 
             case TOO_FAR:
-                checkAndTransition(status, settings.approaching_threshold, TagStatus.TagStatusState.APPROACHING);
+                // Use dwell-only logic for TOO_FAR -> APPROACHING
+                checkAndTransition(status,
+                        settings.approaching_threshold,
+                        TagStatus.TagStatusState.APPROACHING,
+                        HOLD_MS);
                 break;
 
             case APPROACHING:
-                if (!checkAndTransition(status, settings.arrived_threshold, TagStatus.TagStatusState.HERE)) {
+                Log.d(TAG, String.format("State APPROACHING: ema=%.2f, arriveThresh=%d, approachThresh=%d",
+                        status.emaRssi, settings.arrived_threshold, settings.approaching_threshold));
+
+                // Use dwell-only logic for APPROACHING -> HERE
+                if (!checkAndTransition(status,
+                        settings.arrived_threshold,
+                        TagStatus.TagStatusState.HERE,
+                        HOLD_MS)) {
+
+                    // If it fades below approach threshold, fall back
                     if (status.emaRssi < settings.approaching_threshold) {
+                        Log.d(TAG, "APPROACHING -> TOO_FAR (signal faded)");
                         status.state = TagStatus.TagStatusState.TOO_FAR;
-                        status.consecutiveRssiIncreases = 0;
+                        status.consecutiveRssiIncreases = 0; // kept for compatibility; not used
                         status.previousEmaRssi = 0.0f;
+                        resetDwellTimers();
                     }
                 }
                 break;
 
             case HERE:
-                if (status.emaRssi < settings.arrived_threshold - EXIT_HYSTERESIS_DB) {
+                float exitThreshold = settings.arrived_threshold - EXIT_HYSTERESIS_DB;
+                Log.d(TAG, String.format("State HERE: ema=%.2f, exitThresh=%.2f",
+                        status.emaRssi, exitThreshold));
+                if (status.emaRssi < exitThreshold) {
                     Log.i(TAG, "Tag #" + status.tagId + " : Logging pass.");
                     status.state = TagStatus.TagStatusState.LOGGED;
                     status.exitTimeMs = status.lastSeenMs;
+                    resetDwellTimers();
                 }
                 break;
 
@@ -107,28 +136,68 @@ public class TagProcessor {
         }
     }
 
+    /**
+     * Dwell-only transition checker:
+     * Require EMA >= threshold for at least dwellMs (time-based). No "increasing" / consecutive-sample rule.
+     */
     private boolean checkAndTransition(
             @NonNull TagStatus status,
             int threshold,
-            @NonNull TagStatus.TagStatusState nextState
+            @NonNull TagStatus.TagStatusState nextState,
+            long dwellMs
     ) {
-        boolean isRssiIncreasing = (status.previousEmaRssi == 0.0f)
-                || (status.emaRssi - status.previousEmaRssi >= MIN_EMA_DELTA);
+        final boolean aboveThreshold = status.emaRssi >= threshold;
 
-        if (status.emaRssi >= threshold && isRssiIncreasing) {
-            status.consecutiveRssiIncreases++;
+        long start = getDwellStartFor(nextState);
+        if (aboveThreshold) {
+            if (start == 0L) {
+                start = status.lastSeenMs;
+                setDwellStartFor(nextState, start);
+                Log.d(TAG, nextState + ": above threshold, starting dwell at " + start);
+            }
+            long dwell = status.lastSeenMs - start;
+            if (dwell >= dwellMs) {
+                Log.i(TAG, "Tag #" + status.tagId + " met dwell (" + dwell + " ms) -> " + nextState.name());
+                status.state = nextState;
+                status.consecutiveRssiIncreases = 0; // compatibility, unused
+                status.previousEmaRssi = 0.0f;
+                setDwellStartFor(nextState, 0L); // reset the used timer
+                resetOtherDwell(nextState);
+                return true;
+            }
         } else {
-            status.consecutiveRssiIncreases = 0;
-        }
-
-        if (status.consecutiveRssiIncreases >= SAMPLES_TO_CONFIRM_STATE) {
-            Log.i(TAG, "Tag #" + status.tagId + " confirmed " + nextState.name());
-            status.state = nextState;
-            status.consecutiveRssiIncreases = 0;
-            status.previousEmaRssi = 0.0f;
-            return true;
+            if (start != 0L) {
+                Log.d(TAG, nextState + ": dropped below gate; resetting dwell timer");
+            }
+            setDwellStartFor(nextState, 0L);
         }
         return false;
+    }
+
+    private void resetDwellTimers() {
+        approachGateStartMs = 0L;
+        arrivedGateStartMs  = 0L;
+    }
+
+    private void resetOtherDwell(TagStatus.TagStatusState keep) {
+        if (keep != TagStatus.TagStatusState.APPROACHING) approachGateStartMs = 0L;
+        if (keep != TagStatus.TagStatusState.HERE)        arrivedGateStartMs  = 0L;
+    }
+
+    private long getDwellStartFor(TagStatus.TagStatusState nextState) {
+        switch (nextState) {
+            case APPROACHING: return approachGateStartMs;
+            case HERE:        return arrivedGateStartMs;
+            default:          return 0L;
+        }
+    }
+
+    private void setDwellStartFor(TagStatus.TagStatusState nextState, long valueMs) {
+        switch (nextState) {
+            case APPROACHING: approachGateStartMs = valueMs; break;
+            case HERE:        arrivedGateStartMs  = valueMs; break;
+            default: /* no dwell tracked */ break;
+        }
     }
 
     public void findAndSetPeakTime(
@@ -140,7 +209,7 @@ public class TagProcessor {
         if (peakData != null) {
             status.peakTimeMs = peakData.peakTimeMs;
             status.peakRssi = peakData.peakRssi;
-            Log.w(TAG, ">>> Corrected Split Time for #" + status.tagId + " = " + status.peakTimeMs);
+            Log.w(TAG, ">>> Corrected Split Time for #" + status.tagId + " = " + status.peakTimeMs + " peakRssi=" + status.peakRssi + " <<<");
         } else {
             Log.e(TAG, "Peak finder failed for trackId: " + status.trackId + " — using live fallback peak.");
         }

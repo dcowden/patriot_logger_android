@@ -263,7 +263,7 @@ public class BleScannerService extends Service {
         }
         else{
             float smoothedRssi = rssiSmoother.getSmoothedRssi(rssi,currentSettings);
-            CalibrationSample td = new CalibrationSample(tagId,now,(int)smoothedRssi);
+            CalibrationSample td = new CalibrationSample(tagId, now, rssi, (int) smoothedRssi);
             CalibrationTagDataBus.append(td);
         }
         Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );

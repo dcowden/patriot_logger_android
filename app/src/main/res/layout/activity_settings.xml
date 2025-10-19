@@ -142,4 +142,13 @@
         app:layout_constraintStart_toEndOf="@+id/buttonClearCalibration"
         app:layout_constraintTop_toTopOf="@+id/buttonClearCalibration" />
 
+    <Button
+        android:id="@+id/buttonDownloadCsv"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Download CSV"
+        app:layout_constraintTop_toBottomOf="@+id/buttonClearCalibration"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="12dp"/>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

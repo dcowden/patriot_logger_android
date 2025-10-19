@@ -4,7 +4,9 @@ import com.patriotlogger.logger.logic.RssiSmoother;
 import android.content.Intent;
 import android.content.res.TypedArray;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -15,6 +17,7 @@ import android.widget.Toast;
 import androidx.annotation.AttrRes;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.lifecycle.Observer;
 
 import com.github.mikephil.charting.charts.LineChart;
@@ -35,10 +38,20 @@ import com.patriotlogger.logger.data.Setting;
 import com.patriotlogger.logger.data.TagData;
 import com.patriotlogger.logger.service.BleScannerService;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+// ADDITIONS (match MainActivity’s approach; safe on existing perms)
+import android.os.Build;
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.io.FileOutputStream;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -57,7 +70,7 @@ public class SettingsActivity extends AppCompatActivity {
     private TextView labelArrivedThreshold;
     // private TextView labelRssiAlpha;
     private Button buttonSaveChanges;
-    private Button buttonStartCalibration, buttonHere, buttonArriving, buttonClearCalibration;
+    private Button buttonStartCalibration, buttonHere, buttonArriving, buttonClearCalibration, buttonDownloadData;
     private LineChart chartCalibration;
 
     private Setting currentSettings;
@@ -73,12 +86,13 @@ public class SettingsActivity extends AppCompatActivity {
             LineData lineData = chartCalibration.getData();
             if (lineData == null) return;
             lineData.setDrawValues(false);
-            LineDataSet set = (LineDataSet) lineData.getDataSetByIndex(0);
+            LineDataSet smoothedSet = (LineDataSet) lineData.getDataSetByIndex(1);
+            LineDataSet rawSet = (LineDataSet) lineData.getDataSetByIndex(0);
             for (CalibrationSample sample : newSamples) {
-                float smoothedRssi = calibrationSmoother.getSmoothedRssi(sample.rssi, currentSettings);
                 float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
-                set.addEntry(new Entry(elapsedTimeInSeconds, smoothedRssi));
 
+                rawSet.addEntry(new Entry(elapsedTimeInSeconds, sample.rssi));
+                smoothedSet.addEntry(new Entry(elapsedTimeInSeconds, sample.smoothedRssi));
             }
 
             lastSampleTimestamp = newSamples.get(newSamples.size() - 1).timestampMs;
@@ -87,7 +101,7 @@ public class SettingsActivity extends AppCompatActivity {
             chartCalibration.notifyDataSetChanged();
 
             chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
-            chartCalibration.moveViewToX(set.getXMax()); // Move to the newest entry's X value
+            chartCalibration.moveViewToX(smoothedSet.getXMax()); // Move to the newest entry's X value
             CalibrationSample mostRecent = newSamples.get(0);
             float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
             if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
@@ -128,6 +142,7 @@ public class SettingsActivity extends AppCompatActivity {
         buttonHere = findViewById(R.id.buttonHere);
         buttonArriving = findViewById(R.id.buttonArriving);
         buttonClearCalibration = findViewById(R.id.buttonClearCalibration);
+        buttonDownloadData = findViewById(R.id.buttonDownloadCsv);
         chartCalibration = findViewById(R.id.chartCalibration);
 
         CalibrationTagDataBus.getData().observe(this, calibrationObserver);
@@ -154,6 +169,7 @@ public class SettingsActivity extends AppCompatActivity {
         buttonClearCalibration.setOnClickListener(v -> clearChart());
         buttonHere.setOnClickListener(v -> setSliderFromLastRssi(sliderArrivedThreshold));
         buttonArriving.setOnClickListener(v -> setSliderFromLastRssi(sliderApproachingThreshold));
+        buttonDownloadData.setOnClickListener(v -> downloadData());
     }
 
     private void setupSliderListeners() {
@@ -302,20 +318,30 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void clearChart() {
-        chartCalibration.setData(new LineData(createDataSet()));
+        LineData lineData = new LineData(createRawDataSet(),createSmoothedDataSet() );
+        chartCalibration.setData(lineData);
         chartCalibration.invalidate();
         calibrationStartTime = System.currentTimeMillis();
         chartCalibration.getXAxis().setAxisMinimum(0f);
         chartCalibration.getXAxis().setAxisMaximum(30f);
     }
 
-    private LineDataSet createDataSet() {
-        LineDataSet set = new LineDataSet(new ArrayList<>(), "RSSI");
-        set.setDrawCircles(true);
-        set.setCircleColor(Color.RED);
-        set.setCircleRadius(3f);
+    private LineDataSet createSmoothedDataSet() {
+        LineDataSet set = new LineDataSet(new ArrayList<>(), "Smoothed RSSI");
+        set.setDrawCircles(false);
         set.setColor(Color.RED);
-        set.setLineWidth(2f);
+        set.setLineWidth(6f);
+        set.setMode(LineDataSet.Mode.CUBIC_BEZIER);
+        return set;
+    }
+
+    private LineDataSet createRawDataSet() {
+        LineDataSet set = new LineDataSet(new ArrayList<>(), "Raw RSSI");
+        set.setDrawCircles(true);
+        set.setCircleColor(Color.BLUE);
+        set.setCircleRadius(2f);
+        set.setColor(Color.TRANSPARENT);
+        set.setLineWidth(0f);
         return set;
     }
 
@@ -327,6 +353,85 @@ public class SettingsActivity extends AppCompatActivity {
             slider.setValue(roundedRssi);
         }
     }
+
+    private void downloadData() {
+        LineData lineData = chartCalibration.getData();
+        if (lineData == null || lineData.getDataSetCount() < 2) {
+            Toast.makeText(this, "No data to download", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        LineDataSet smoothedSet = (LineDataSet) lineData.getDataSetByIndex(1);
+        LineDataSet rawSet = (LineDataSet) lineData.getDataSetByIndex(0);
+
+        if (smoothedSet.getEntryCount() == 0) {
+            Toast.makeText(this, "No data to download", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Build CSV content (timestamp,tagid,rssi,smoothedrssi)
+        StringBuilder sb = new StringBuilder(32 * smoothedSet.getEntryCount());
+        sb.append("timestamp,tagid,rssi,smoothedrssi\n");
+
+        for (int i = 0; i < smoothedSet.getEntryCount(); i++) {
+            Entry smoothedEntry = smoothedSet.getEntryForIndex(i);
+            Entry rawEntry = rawSet.getEntryForIndex(i);
+
+            float elapsedSeconds = smoothedEntry.getX();
+            long timestampMs = calibrationStartTime + (long)(elapsedSeconds * 1000);
+
+            int tagId = 0;
+            int rssi = Math.round(rawEntry.getY());
+            float smoothedRssi = smoothedEntry.getY();
+
+            sb.append(String.format(Locale.US, "%d,%d,%d,%.2f\n",
+                    timestampMs, tagId, rssi, smoothedRssi));
+        }
+
+        String fileName = "calibration_data_" + System.currentTimeMillis() + ".csv";
+        boolean ok = saveCsvToDownloads(fileName, sb.toString());
+        if (ok) {
+            Toast.makeText(this, "Saved to Downloads: " + fileName, Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "Error saving CSV (see log).", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // Same storage strategy as MainActivity (no FileProvider needed)
+    private boolean saveCsvToDownloads(String fileName, String fileContent) {
+        boolean success = false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "text/csv");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    try (OutputStream outputStream = getContentResolver().openOutputStream(uri)) {
+                        if (outputStream != null) {
+                            outputStream.write(fileContent.getBytes(StandardCharsets.UTF_8));
+                            success = true;
+                        }
+                    }
+                }
+            } else {
+                File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (downloadsDir.exists() || downloadsDir.mkdirs()) {
+                    File file = new File(downloadsDir, fileName);
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        fos.write(fileContent.getBytes(StandardCharsets.UTF_8));
+                        success = true;
+                    }
+                }
+            }
+        } catch (IOException | SecurityException e) {
+            Log.e(TAG_ACTIVITY + "_CSV", "Error writing CSV file " + fileName, e);
+        }
+        return success;
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
