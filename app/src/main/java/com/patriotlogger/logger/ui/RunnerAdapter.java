@@ -62,8 +62,8 @@ public class RunnerAdapter extends RecyclerView.Adapter<RunnerAdapter.VH> {
         TagStatus s = differ.getCurrentList().get(pos);
 
         String namePart = (s.friendlyName != null && !s.friendlyName.isEmpty()) ? s.friendlyName : "Device";
-        String displayName = String.format(Locale.getDefault(), "%s (%d)", namePart, s.trackId);
-        String formattedRssi = String.format("%.1f", s.emaRssi);
+        String displayName = String.format(Locale.getDefault(), "%s (trackid=%d)", namePart, s.trackId);
+        String formattedRssi = String.format("rssi: %.1f", s.emaRssi);
         h.name.setText(displayName);
 
         h.status.setText(s.state.name() + " (" + formattedRssi + ")"); // This should still work as s.state is now TagStatus.TagStatusState

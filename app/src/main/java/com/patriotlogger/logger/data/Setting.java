@@ -10,7 +10,7 @@ public class Setting {
     public static final boolean DEFAULT_RETAIN_SAMPLES = true;
     public static final int DEFAULT_ARRIVED_THRESHOLD = -70;
     public static final int DEFAULT_APPROACHING_THRESHOLD = -90;
-    public static final float DEFAULT_RSSI_AVERAGING_ALPHA = 0.25f;
+    public static final float DEFAULT_RSSI_AVERAGING_ALPHA = 0.1f;
 
     @PrimaryKey
     public int id = SETTINGS_ID;
