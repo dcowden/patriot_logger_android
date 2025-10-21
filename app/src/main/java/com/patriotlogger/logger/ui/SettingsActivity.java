@@ -81,7 +81,7 @@ public class SettingsActivity extends AppCompatActivity {
     protected void processSamples( List<CalibrationSample> newSamples){
         if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
             long s = System.currentTimeMillis();
-            Log.i("SettingsActivity", "Starring Chart Display");
+            Log.d("SettingsActivity", "Starring Chart Display");
 
             LineData lineData = chartCalibration.getData();
             if (lineData == null) return;
@@ -113,7 +113,7 @@ public class SettingsActivity extends AppCompatActivity {
                 chartCalibration.getXAxis().setAxisMaximum(elapsedTimeInSeconds);
             }
 
-            Log.i("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
+            Log.d("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
         }
 
     }

@@ -239,12 +239,12 @@ public class BleScannerService extends Service {
 
         if (sr == null) return null;
         String deviceName = sr.getDeviceName();
-        Log.d(TAG_SERVICE, "Received scan result for device: " + deviceName );
+        //Log.d(TAG_SERVICE, "Received scan result for device: " + deviceName );
         if (deviceName != null && deviceName.startsWith(TAG_PREFIX)) {
             try {
                 return Integer.parseInt(deviceName.substring(TAG_PREFIX.length() + 1));
             } catch (NumberFormatException e) {
-                Log.w(TAG_SERVICE, "Failed to parse tagId from deviceName: " + deviceName, e);
+                //Log.w(TAG_SERVICE, "Failed to parse tagId from deviceName: " + deviceName, e);
                 return null;
             }
         }
@@ -257,7 +257,7 @@ public class BleScannerService extends Service {
 
         int rssi = result.getRssi();
         long now = System.currentTimeMillis();
-        Log.d(TAG_SERVICE, "Received scan result for tagId: " + tagId + " RSSI: " + rssi);
+        Log.i(TAG_SERVICE, "Received scan result for tagId: " + tagId + " RSSI: " + rssi);
         if (repository.isSavingEnabled()){
             worker.post(() -> processRawSample(tagId, rssi, now));
         }
@@ -266,12 +266,12 @@ public class BleScannerService extends Service {
             CalibrationSample td = new CalibrationSample(tagId, now, rssi, (int) smoothedRssi);
             CalibrationTagDataBus.append(td);
         }
-        Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );
+        //Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );
     }
 
     private void processRawSample(int tagId, int rssi, long nowMs) {
         long start = System.currentTimeMillis();
-        Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
+        //Log.d(TAG_SERVICE, "New pass for tagId: " + tagId + ". Initializing new TagStatus. lastseen=" + nowMs);
 
         //this always returns a tagstatus-- if its new the status will be TagStatus.TagStatusState.FIRST_SAMPLE
         //and it is in the database too.

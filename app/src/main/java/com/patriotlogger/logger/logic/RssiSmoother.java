@@ -40,10 +40,10 @@ Trend updates slowly, avoids noise-driven slope flips.
 Adds back some lag when RSSI ramps fast.
 
 */
-    private static final float HOLT_ALPHA = 0.8f;
+    private static final float HOLT_ALPHA = 1.0f;
     private static final float HOLT_ALPHA_NO_CHANGE = 1.0f;
     private static final float HOLT_BETA_NO_CHANGE = 0.0f;
-    private static final float HOLT_BETA  = 0.01f;
+    private static final float HOLT_BETA  = 0.00f;
 
     // Shared Holt instance for static smoothing
     private static final Holt staticHolt = new Holt(HOLT_ALPHA, HOLT_BETA);
@@ -68,16 +68,15 @@ Adds back some lag when RSSI ramps fast.
     public static synchronized float computeSmoothedRssi(int rawRssi,
                                                          float previousSmoothedRssi,
                                                          float alpha) {
-        return staticHolt.update(rawRssi);
+        float ema = computeEmaRssi(rawRssi, previousSmoothedRssi, alpha);
+        return staticHolt.update(ema);
     }
 
     /**
      * Instance-based smoothing (per stream).
      */
     public float getSmoothedRssi(int rawRssi, @NonNull Setting settings) {
-        float y = holt.update(rawRssi);
-        lastRssi = y;
-        return y;
+        return computeSmoothedRssi(rawRssi,lastRssi,settings.rssi_averaging_alpha);
     }
 
     public float getLastRssi() {
