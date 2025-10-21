@@ -85,8 +85,8 @@ public class BleScannerService extends Service {
     public static final LiveData<Boolean> isScanning = _isScanning;
     private RssiSmoother rssiSmoother = new RssiSmoother();
 
-    private final Map<Integer, Long> lastRadioNanosByTag = new ConcurrentHashMap<>();
-    private final Map<Integer, Long> lastDeliverNanosByTag = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> lastRadioNs = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> lastDeliverNs = new ConcurrentHashMap<>();
 
     @Override
     public void onCreate() {
@@ -260,11 +260,18 @@ public class BleScannerService extends Service {
         if (tagId == null) return;
 
         int rssi = result.getRssi();
-        long now = System.currentTimeMillis();
-        final long radioNs = (Build.VERSION.SDK_INT >= 26) ? result.getTimestampNanos() : 0L;
+        final long radioNs   = (Build.VERSION.SDK_INT >= 26) ? result.getTimestampNanos() : 0L;
         final long deliverNs = android.os.SystemClock.elapsedRealtimeNanos();
 
-        //Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );
+        // quick probe (lightweight)
+        Long pR = (radioNs > 0) ? lastRadioNs.put(tagId, radioNs) : null;
+        Long pD = lastDeliverNs.put(tagId, deliverNs);
+        if (pD == null || ((deliverNs / 1_000_000L) % 200 == 0)) { // ~2/s
+            long dRadioMs   = (pR != null && radioNs>0 && pR>0) ? (radioNs - pR)/1_000_000L : -1;
+            long dDeliverMs = (pD != null) ? (deliverNs - pD)/1_000_000L : -1;
+            Log.i("BLE_TIMING", "tag="+tagId+" dRadioMs="+dRadioMs+" dDeliverMs="+dDeliverMs);
+        }
+
         worker.post(() -> onScanResultWork(tagId, rssi, radioNs, deliverNs));
     }
 
