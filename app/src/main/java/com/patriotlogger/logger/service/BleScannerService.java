@@ -84,6 +84,10 @@ public class BleScannerService extends Service {
 
     public static final LiveData<Boolean> isScanning = _isScanning;
     private RssiSmoother rssiSmoother = new RssiSmoother();
+
+    private final Map<Integer, Long> lastRadioNanosByTag = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> lastDeliverNanosByTag = new ConcurrentHashMap<>();
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -257,17 +261,29 @@ public class BleScannerService extends Service {
 
         int rssi = result.getRssi();
         long now = System.currentTimeMillis();
+        final long radioNs = (Build.VERSION.SDK_INT >= 26) ? result.getTimestampNanos() : 0L;
+        final long deliverNs = android.os.SystemClock.elapsedRealtimeNanos();
+
+        //Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );
+        worker.post(() -> onScanResultWork(tagId, rssi, radioNs, deliverNs));
+    }
+
+    private void onScanResultWork(int tagId, int rssi, long radioNs, long deliverNs) {
+        // Use radioNs if available to build your own monotonic timestamps
+        //long nowMs = (radioNs > 0) ? (radioNs / 1_000_000L) : android.os.SystemClock.elapsedRealtime();
+        long nowMs = System.currentTimeMillis();
         Log.i(TAG_SERVICE, "Received scan result for tagId: " + tagId + " RSSI: " + rssi);
-        if (repository.isSavingEnabled()){
-            worker.post(() -> processRawSample(tagId, rssi, now));
-        }
-        else{
-            float smoothedRssi = rssiSmoother.getSmoothedRssi(rssi,currentSettings);
-            CalibrationSample td = new CalibrationSample(tagId, now, rssi, (int) smoothedRssi);
+        if (repository.isSavingEnabled()) {
+            processRawSample(tagId, rssi, nowMs);
+        } else {
+            float smoothed = rssiSmoother.getSmoothedRssi(rssi, currentSettings);
+            CalibrationSample td = new CalibrationSample(tagId, nowMs, rssi, (int) smoothed);
+            // Push to UI with rate limiting (see #3)
             CalibrationTagDataBus.append(td);
         }
-        //Log.d(TAG_SERVICE, "Finished posting to queue for tagId: " + tagId );
     }
+
+
 
     private void processRawSample(int tagId, int rssi, long nowMs) {
         long start = System.currentTimeMillis();
