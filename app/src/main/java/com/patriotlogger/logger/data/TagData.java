@@ -22,6 +22,9 @@ public class TagData {
     public long timestampMs; // Timestamp of the sample
     public int rssi;         // RSSI value of the sample
 
+//    public TagData(long timestampMs, int rssi){
+//        this(0,timestampMs,rssi);
+//    }
     public TagData(int trackId, long timestampMs, int rssi) {
         this.trackId = trackId;
         this.timestampMs = timestampMs;

@@ -7,9 +7,9 @@ package com.patriotlogger.logger.data;
  */
 public class CalibrationSample {
     public final int tagId;
-    public final long timestampMs;
-    public final int rssi;
-    public final int smoothedRssi;
+    public  long timestampMs;
+    public  int rssi;
+    public  int smoothedRssi;
 
     public CalibrationSample(int tagId, long timestampMs, int rssi, int smoothedRssi) {
         this.tagId = tagId;
