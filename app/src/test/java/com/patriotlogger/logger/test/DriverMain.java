@@ -1,10 +1,18 @@
 package com.patriotlogger.logger.test;
 
-import com.patriotlogger.logger.data.CalibrationSample;
 import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.data.TagStatus;
 import com.patriotlogger.logger.data.TagStatus.TagStatusState;
 import com.patriotlogger.logger.data.Setting;
+import com.patriotlogger.logger.logic.RssiData;
+import com.patriotlogger.logger.logic.RssiHandler;
 import com.patriotlogger.logger.logic.TagPeakFinder;
+import com.patriotlogger.logger.logic.TcaWithFallbackHandler;
+import com.patriotlogger.logger.logic.filters.MinMaxRssiFilter;
+import com.patriotlogger.logger.logic.filters.RssiFilter;
+
+import org.junit.Test;
+import org.apache.commons.math3.stat.regression.SimpleRegression; // ensure dependency present for handlers
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -38,54 +46,39 @@ public class DriverMain {
             "ema", "median", "filtered", "filter", "estimate", "est", "smoothed", "value", "stateRssi", "x", "xhat"
     };
 
-    @org.junit.Test
+    @Test
     public void runDriver() throws Exception {
         main(new String[]{});
     }
 
     public static void main(String[] args) throws Exception {
-        // ---------- Handlers ----------
+        // ---------- Handlers (new signature) ----------
         List<RssiHandler> handlers = new ArrayList<>();
-        //handlers.add(new EmaRssiHandler(0.30f));              // "EMA(alpha=0.3)"
-        //handlers.add(new MedianRssiHandler(5));               // "MedianN(N=7)"
-        //handlers.add(new KalmanRssiHandler(4f, 16f));         // "Kalman(Q=4.0,R=16.0)"
-        //handlers.add(new KalmanRssiHandler(4f, 32f));         // "Kalman(Q=4.0,R=16.0)"
-        //handlers.add(new KalmanRssiHandler(8f, 16f));         // "Kalman(Q=4.0,R=16.0)"
-        //handlers.add(new KalmanRssiHandler(8f, 32f));
-        //handlers.add(new KalmanRssiHandler(2f, 32f));// "Kalman(Q=4.0,R=16.0)"
-       //handlers.add(new RobustMedianEmaHandler());           // "Median→EMA FSM …"
 
-        //handlers.add(new NonConsecutiveThresholdHandler(-85, 3));                 // any 3 ≥ -85 enter; any 3 < -85 exit
-        //handlers.add(new TimeBasedExitHandler(0.35f, -80, 2000));                 // EMA HERE; LOGGED after 2s
-        //handlers.add(new PowerModelDistanceHandler(0.50f, -70, 2.0, 6.0, 2));     // 3 non-consec inside/outside 6m
-        //handlers.add(new TcaHandler(0.30f, -70, 2.0, 4, 2.0, 40,6));
-        //handlers.add(new TcaHandler(0.30f, -70, 2.0, 6, 2.0, 40,6));
-        //handlers.add(new TcaHandler(0.30f, -70, 2.0, 8, 2.0, 40,6));
-        //handlers.add(new TcaHandler(0.10f, -70, 2.0, 4, 1.5, 40,6));
-        //handlers.add(new TcaHandler(0.20f, -70, 2.0, 4, 1.5, 40,6));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,20.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,15.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 6, 1.5, 40,6,10.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 5, 1.5, 40,6,10.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,10.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,12.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,15.0f));
-        handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.0, 40,6,20.0f));
-        handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 1.5, 40,6,20.0f));
-        handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 2.0, 40,6,20.0f));
-        handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 4, 2.5, 40,6,20.0f));
-        //handlers.add(new TcaHandlerWithFallback(0.20f, -70, 2.0, 3, 1.5, 40,6,10.0f));
-        //handlers.add(new TcaHandlerWithFallback2(0.20f, -70, 2.0, 4, 1.5, 40,6,10.0f));
-
-        //handlers.add(new TcaHandler(0.30f, -70, 2.0, 4, 1.5, 40,6));
-        //handlers.add(new TcaHandler(0.40f, -70, 2.0, 4, 1.5, 40,6));
-        //handlers.add(new TcaHandler(0.50f, -70, 2.0, 4, 1.5, 40,6));
+        // Tweak these as you wish; we sweep only the hereMeters to compare behavior.
+        handlers.add(new TcaWithFallbackHandler(
+                /* alpha */           0.30f,
+                /* txAt1mDbm */      -70.0,
+                /* pathExp 2.0=outdoors */         2.0,
+                /* hereMeters */      1.0,
+                /* thresholdSec */    1.5,
+                /* windowSize */     40,
+                /* minPoints */      6,
+                /* approachMeters */ 15.0
+        ));
+        //handlers.add(new TcaWithFallbackHandler(0.20f, -70.0, 2.0, 4.0, 2.0, 40, 6, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.20f, -70.0, 2.0, 4.0, 2.0, 40, 3, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.20f, -70.0, 2.0, 4.0, 2.5, 40, 6, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.30f, -70.0, 2.0, 4.0, 2.5, 40, 6, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.30f, -70.0, 2.0, 4.0, 2.0, 40, 6, 12.0));
+        handlers.add(new TcaWithFallbackHandler(0.30f, -70.0, 2.0, 4.0, 1.5, 40, 6, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.30f, -70.0, 2.0, 3.5, 2.0, 40, 6, 12.0));
+        //handlers.add(new TcaWithFallbackHandler(0.30f, -70.0, 2.0, 4.5, 2.5, 40, 6, 12.0));
 
         // ---------- Filters (ingest) ----------
-        List<Filter> filters = Arrays.asList(
-                new RssiRangeFilter(-115, -35)
-                //new OutlierDeltaFilter(5, 8),
-                //new MinConsecutiveFilter(6)
+        List<RssiFilter> filters = Arrays.asList(
+                new MinMaxRssiFilter(-115, -35)
+                // add more RssiFilter impls here if you want (e.g., delta/outlier filters you ported)
         );
 
         List<String> resourceFiles = ResourceUtils.listResourceFiles(SAMPLES_DIR);
@@ -96,13 +89,13 @@ public class DriverMain {
 
         for (String resPath : resourceFiles) {
             final String sampleFile = resPath.substring(resPath.lastIndexOf('/') + 1);
-            List<CalibrationSample> raw = readSamplesFromResource(resPath);
-            List<CalibrationSample> samples = applyFilters(raw, filters);
+            List<RssiData> raw = readSamplesFromResource(resPath);
+            List<RssiData> samples = applyFilters(raw, filters);
 
             // Raw filtered series for plotting (blue circles)
             Map<Long, Integer> tsToRssi = new HashMap<>(Math.max(16, samples.size() * 2));
             List<Long> tsList = new ArrayList<>(samples.size());
-            for (CalibrationSample s : samples) {
+            for (RssiData s : samples) {
                 tsToRssi.put(s.timestampMs, s.rssi);
                 tsList.add(s.timestampMs);
             }
@@ -110,34 +103,51 @@ public class DriverMain {
 
             // Per-handler: run FSM, collect states + LINE SERIES of handler value
             Map<String, Map<String, Point>> algoStates = new LinkedHashMap<>();
-            Map<String, List<LinePoint>> algoLines = new LinkedHashMap<>();
+            Map<String, List<LinePoint>>    algoLines  = new LinkedHashMap<>();
 
             for (RssiHandler h : handlers) {
-                // trace buffer for the handler's filtered value
+                // trace buffer for the handler's filtered value (best-effort via reflection)
                 List<LinePoint> line = new ArrayList<>(samples.size());
 
                 h.init();
+
+                // Minimal stand-in for repository state per tag:
+                // single tag track with id 1 unless CSV provides per-row tag IDs (we keep last-seen).
+                TagStatus status = new TagStatus();
+                status.trackId = 1;
+                status.tagId   = (samples.isEmpty() ? 0 : samples.get(0).tagId);
+                status.state   = TagStatusState.FIRST_SAMPLE;
+                status.entryTimeMs = samples.isEmpty() ? 0L : samples.get(0).timestampMs;
+
+                final List<TagData> history = new ArrayList<>(Math.max(64, samples.size()));
                 TestResult tr = new TestResult();
                 TagStatusState prev = TagStatusState.TOO_FAR;
 
-                for (CalibrationSample s : samples) {
-                    TagStatusState cur = h.acceptSample(s);
-
-                    // try to read handler's current value via reflection (best-effort)
-                    Double v = reflectCurrentValue(h);
-                    if (v == null) {
-                        // fallback: use incoming RSSI (not ideal, but better than nothing)
-                        v = (double) s.rssi;
+                for (RssiData s : samples) {
+                    if (s.tagId != status.tagId) {
+                        // If CSV includes mixed tagIds, switch status.tagId to keep things sane.
+                        status.tagId = s.tagId;
                     }
+
+                    // IMPORTANT: call handler with current status + history + sample
+                    TagStatus newStatus = h.acceptSample(status, history, s);
+                    status = newStatus; // carry forward
+
+                    // Best-effort handler internal value (may be null; we fallback to raw RSSI)
+                    Double v = reflectCurrentValue(h);
+                    if (v == null) v = (double) s.rssi;
                     line.add(new LinePoint(s.timestampMs - BASE_TS, v));
 
-                    if (cur != prev) {
-                        if (cur == TagStatusState.APPROACHING ||
-                                cur == TagStatusState.HERE ||
-                                cur == TagStatusState.LOGGED) {
-                            tr.record(cur, s.timestampMs);
+                    // Maintain history AFTER processing (matching service semantics)
+                    history.add(new TagData(status.trackId, s.timestampMs, s.rssi));
+
+                    if (status.state != prev) {
+                        if (status.state == TagStatusState.APPROACHING ||
+                                status.state == TagStatusState.HERE ||
+                                status.state == TagStatusState.LOGGED) {
+                            tr.record(status.state, s.timestampMs);
                         }
-                        prev = cur;
+                        prev = status.state;
                     }
                 }
 
@@ -149,7 +159,7 @@ public class DriverMain {
                 String tPeak = "X";
                 Long loggedTs = parseLongOrNull(tLogged);
                 if (loggedTs != null) {
-                    List<CalibrationSample> upToLogged = cutSamplesAtOrBefore(samples, loggedTs);
+                    List<RssiData> upToLogged = cutSamplesAtOrBefore(samples, loggedTs);
                     tPeak = detectPeakTs(upToLogged);
                 }
 
@@ -208,23 +218,23 @@ public class DriverMain {
     }
 
     // ---------- Filters ----------
-    private static List<CalibrationSample> applyFilters(List<CalibrationSample> in, List<Filter> filters) {
+    private static List<RssiData> applyFilters(List<RssiData> in, List<RssiFilter> filters) {
         if (filters == null || filters.isEmpty()) return in;
-        List<CalibrationSample> out = new ArrayList<>(in.size());
+        List<RssiData> out = new ArrayList<>(in.size());
         outer:
-        for (CalibrationSample s : in) {
-            for (Filter f : filters) {
-                if (!f.shouldAccept(s.rssi)) continue outer;
+        for (RssiData s : in) {
+            for (RssiFilter f : filters) {
+                if (!f.shouldAccept(s.timestampMs, s.rssi)) continue outer;
             }
             out.add(s);
         }
         return out;
     }
 
-    private static List<CalibrationSample> cutSamplesAtOrBefore(List<CalibrationSample> in, long cutoffTs) {
+    private static List<RssiData> cutSamplesAtOrBefore(List<RssiData> in, long cutoffTs) {
         if (in == null || in.isEmpty()) return Collections.emptyList();
-        List<CalibrationSample> out = new ArrayList<>(in.size());
-        for (CalibrationSample s : in) {
+        List<RssiData> out = new ArrayList<>(in.size());
+        for (RssiData s : in) {
             if (s.timestampMs <= cutoffTs) out.add(s); else break;
         }
         return out;
@@ -232,7 +242,7 @@ public class DriverMain {
 
     // ---------- JSON ----------
     private static String buildJson(String sampleFile,
-                                    List<CalibrationSample> samples,
+                                    List<RssiData> samples,
                                     Map<String, Map<String, Point>> algoStates,
                                     Map<String, List<LinePoint>> algoLines) {
         StringBuilder sb = new StringBuilder(128_000);
@@ -242,7 +252,7 @@ public class DriverMain {
         // raw series (filtered)
         sb.append("\"series\":[");
         for (int i = 0; i < samples.size(); i++) {
-            CalibrationSample s = samples.get(i);
+            RssiData s = samples.get(i);
             sb.append("{\"t\":").append(s.timestampMs - BASE_TS)
                     .append(",\"rssi\":").append(s.rssi).append("}");
             if (i + 1 < samples.size()) sb.append(",");
@@ -325,11 +335,11 @@ public class DriverMain {
         try { return Long.parseLong(s); } catch (NumberFormatException e) { return null; }
     }
 
-    private static String detectPeakTs(List<CalibrationSample> samples) {
+    private static String detectPeakTs(List<RssiData> samples) {
         if (samples == null || samples.isEmpty()) return "X";
         try {
             List<TagData> tagDataList = new ArrayList<>(samples.size());
-            for (CalibrationSample s : samples) tagDataList.add(new TagData(0, s.timestampMs, s.rssi));
+            for (RssiData s : samples) tagDataList.add(new TagData(0, s.timestampMs, s.rssi));
             Setting setting = new Setting();
             setting.rssi_averaging_alpha = 0.30f;
             TagPeakFinder pf = new TagPeakFinder();
@@ -353,8 +363,8 @@ public class DriverMain {
     }
 
     // ---------- CSV ingest ----------
-    private static List<CalibrationSample> readSamplesFromResource(String resourcePath) {
-        List<CalibrationSample> out = new ArrayList<>();
+    private static List<RssiData> readSamplesFromResource(String resourcePath) {
+        List<RssiData> out = new ArrayList<>();
         try (BufferedReader br = ResourceUtils.openResourceAsReader(resourcePath)) {
             String line;
             int tsIdx = -1, tagIdx = -1, rssiIdx = -1, smoothIdx = -1;
@@ -393,12 +403,22 @@ public class DriverMain {
                     if (smoothIdx >= 0 && smoothIdx < parts.length && !parts[smoothIdx].trim().isEmpty()) {
                         try { smoothed = Integer.parseInt(parts[smoothIdx].trim()); } catch (NumberFormatException ignore) {}
                     }
-                    out.add(new CalibrationSample(tagId, ts, rssi, smoothed));
+                    out.add(new RssiData(tagId, ts, rssi, smoothed));
                 } catch (NumberFormatException ignore) { /* skip */ }
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed reading " + resourcePath, e);
         }
         return out;
+    }
+
+    // ---------- tiny state helper ----------
+    private static final class TestResult {
+        private final Map<TagStatusState, Long> firstTsByState = new EnumMap<>(TagStatusState.class);
+        void record(TagStatusState s, long ts) { firstTsByState.putIfAbsent(s, ts); }
+        String getOrX(TagStatusState s) {
+            Long v = firstTsByState.get(s);
+            return (v == null) ? "X" : Long.toString(v);
+        }
     }
 }

@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 10,
-    "identityHash": "b52cc073e52a65f400eeed68d05c90ab",
+    "identityHash": "39b366439871f734e3066852f9b31071",
     "entities": [
       {
         "tableName": "tag_status",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `previousEmaRssi` REAL NOT NULL, `consecutiveRssiIncreases` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `peakRssi` REAL NOT NULL, `emaRssi` REAL NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `arrivedTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -17,18 +17,6 @@
           {
             "fieldPath": "tagId",
             "columnName": "tagId",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "previousEmaRssi",
-            "columnName": "previousEmaRssi",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "consecutiveRssiIncreases",
-            "columnName": "consecutiveRssiIncreases",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -44,6 +32,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "arrivedTimeMs",
+            "columnName": "arrivedTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "peakTimeMs",
             "columnName": "peakTimeMs",
             "affinity": "INTEGER",
@@ -53,18 +47,6 @@
             "fieldPath": "exitTimeMs",
             "columnName": "exitTimeMs",
             "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "peakRssi",
-            "columnName": "peakRssi",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "emaRssi",
-            "columnName": "emaRssi",
-            "affinity": "REAL",
             "notNull": true
           },
           {
@@ -198,7 +180,7 @@
       },
       {
         "tableName": "settings_config",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `retain_samples` INTEGER, `arrived_threshold` INTEGER, `approaching_threshold` INTEGER, `rssi_averaging_alpha` REAL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `retain_samples` INTEGER, `arrived_threshold` INTEGER, `approaching_threshold` INTEGER, `rssi_averaging_alpha` REAL, `tca_here_meters` REAL, `tca_approach_meters` REAL, `tca_threshold_sec` REAL, `tca_window_size` INTEGER, `tca_min_points` INTEGER, `path_loss_n` REAL, `tx_power_at_1m_dbm` REAL, `tca_alpha` REAL, `filter_min_rssi` INTEGER, `filter_max_rssi` INTEGER, `tagdata_flush_ms` INTEGER, `sweep_interval_ms` INTEGER, `abandoned_timeout_ms` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -225,6 +207,71 @@
             "fieldPath": "rssi_averaging_alpha",
             "columnName": "rssi_averaging_alpha",
             "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tca_here_meters",
+            "columnName": "tca_here_meters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tca_approach_meters",
+            "columnName": "tca_approach_meters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tca_threshold_sec",
+            "columnName": "tca_threshold_sec",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tca_window_size",
+            "columnName": "tca_window_size",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tca_min_points",
+            "columnName": "tca_min_points",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "path_loss_n",
+            "columnName": "path_loss_n",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tx_power_at_1m_dbm",
+            "columnName": "tx_power_at_1m_dbm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "tca_alpha",
+            "columnName": "tca_alpha",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "filter_min_rssi",
+            "columnName": "filter_min_rssi",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "filter_max_rssi",
+            "columnName": "filter_max_rssi",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tagdata_flush_ms",
+            "columnName": "tagdata_flush_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sweep_interval_ms",
+            "columnName": "sweep_interval_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "abandoned_timeout_ms",
+            "columnName": "abandoned_timeout_ms",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -298,7 +345,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b52cc073e52a65f400eeed68d05c90ab')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '39b366439871f734e3066852f9b31071')"
     ]
   }
 }

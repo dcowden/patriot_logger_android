@@ -13,13 +13,20 @@ import androidx.room.Room;
 import androidx.room.RoomDatabase;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 
-import com.patriotlogger.logger.util.ThrottledLiveData;
+import com.patriotlogger.logger.logic.RssiData;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public final class Repository {
     private static final String TAG = "Repository";
@@ -32,13 +39,30 @@ public final class Repository {
 
     private final MutableLiveData<Boolean> areSettingsInitialized = new MutableLiveData<>(false);
 
+    // ===== Step-2: buffered TagData + periodic flush =====
+    private final Map<Integer, List<TagData>> inMemoryTagDataBufferByTrack = new ConcurrentHashMap<>();
+
+    private volatile long tagDataFlushIntervalMs = 2000L;
     private volatile boolean savingEnabled = true;
 
-    public boolean isSavingEnabled(){
-        return savingEnabled;
-    }
-    public void setSavingEnabled(boolean newValue){
-        this.savingEnabled = newValue;
+    private final Runnable periodicFlushRunnable = new Runnable() {
+        @Override public void run() {
+            try { flushAllTagDataBuffersInternal(); }
+            finally { mainThreadHandler.postDelayed(this, tagDataFlushIntervalMs); }
+        }
+    };
+
+    // ===== Step-5: calibration stream (in-memory) =====
+    private final Object calibrationLock = new Object();
+    private final ArrayList<RssiData> calibrationBuffer = new ArrayList<>(512);
+    private final MutableLiveData<List<RssiData>> calibrationLive = new MutableLiveData<>(new ArrayList<>());
+
+    public boolean isSavingEnabled(){ return savingEnabled; }
+    public void setSavingEnabled(boolean newValue){ this.savingEnabled = newValue; }
+
+    public void setTagDataFlushIntervalMs(long intervalMs) {
+        if (intervalMs < 250L) intervalMs = 250L;
+        this.tagDataFlushIntervalMs = intervalMs;
     }
 
     private Repository(Context ctx) {
@@ -46,32 +70,28 @@ public final class Repository {
         db = Room.databaseBuilder(ctx.getApplicationContext(), AppDatabase.class, "psl.db")
                 .fallbackToDestructiveMigration()
                 .addCallback(new RoomDatabase.Callback() {
-                    @Override
-                    public void onCreate(@NonNull SupportSQLiteDatabase _db) {
-                        super.onCreate(_db);
+                    @Override public void onCreate(@NonNull SupportSQLiteDatabase _db) {
                         databaseWriteExecutor.execute(Repository.this::initializeDefaultSettingsInDbInternal);
                     }
-
-                    @Override
-                    public void onOpen(@NonNull SupportSQLiteDatabase _db) {
-                        super.onOpen(_db);
+                    @Override public void onOpen(@NonNull SupportSQLiteDatabase _db) {
                         databaseWriteExecutor.execute(Repository.this::checkAndInitializeDefaultSettingsInternal);
                     }
                 })
                 .build();
+
+        mainThreadHandler.postDelayed(periodicFlushRunnable, tagDataFlushIntervalMs);
     }
 
     public static Repository get(@NonNull Context context) {
         if (instance == null) {
             synchronized (Repository.class) {
-                if (instance == null) {
-                    instance = new Repository(context.getApplicationContext());
-                }
+                if (instance == null) instance = new Repository(context.getApplicationContext());
             }
         }
         return instance;
     }
 
+    // ===== TagStatus helpers =====
     private TagStatus createNewTagStatus(int tagId){
         TagStatus newStatus = new TagStatus();
         newStatus.tagId = tagId;
@@ -80,90 +100,174 @@ public final class Repository {
         newStatus.state = TagStatus.TagStatusState.FIRST_SAMPLE;
         return newStatus;
     }
-    public TagStatus getLatestTagStatusForId(int tagId){
-        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
-        TagStatus ts = null;
 
-        synchronized (tagLock){
-            boolean needsInsert = false;
-            ts = db.tagStatusDao().getTagStatusForTagId(tagId);
-            if ( ts == null ){
+    // ------------------------------------------------------------
+    // === Calibration in-memory API ===
+    // ------------------------------------------------------------
+
+
+    /** Reactive stream of calibration RSSI data (UI can observe this). */
+    public LiveData<List<RssiData>> getLiveCalibrationRssi() {
+        return calibrationLive; // <- unify on the later stream
+    }
+
+    /** Clear calibration samples (useful when switching stations). */
+    public void clearCalibrationRssi() {
+        clearCalibrationBuffer(); // reuse the later helper
+    }
+
+    public TagStatus getOrCreateActiveStatus(int tagId) {
+        final Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+        synchronized (tagLock) {
+            TagStatus ts = db.tagStatusDao().getLatestForTagIdSync(tagId);
+
+            // Check if we need to start a new pass
+            if (ts == null || ts.state == TagStatus.TagStatusState.LOGGED || ts.state == TagStatus.TagStatusState.TIMED_OUT) {
+                // --- START OF FIX ---
+
+                // 1. Create a completely new TagStatus object for the new pass.
                 ts = createNewTagStatus(tagId);
-                needsInsert = true;
-            }
-            ts.lastSeenMs = System.currentTimeMillis();
-            ts.friendlyName =  resolveFriendlyName(tagId);
-            if ( needsInsert){
+
+                // 2. Resolve the friendly name for this NEW object.
+                ts.friendlyName = resolveFriendlyName(tagId);
+
+                // 3. Insert it into the database to get a new auto-generated trackId.
                 long newId = db.tagStatusDao().insertSync(ts);
-                ts.trackId = (int)newId;
+                ts.trackId = (int) newId;
+
+                // --- END OF FIX ---
+            } else {
+                // This is a continuation of an existing, active pass.
+                // Just update the last seen time.
+                ts.lastSeenMs = System.currentTimeMillis();
+                // No need to update the friendly name, it's already set.
             }
 
+            // By this point, 'ts' is the correct object for the current pass,
+            // whether it's brand new or a continuation of an active one.
             return ts;
         }
+    }
 
+    public TagStatus startNewPassForTag(int tagId) {
+        final Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+        synchronized (tagLock) {
+            TagStatus ts = createNewTagStatus(tagId);
+            long newId = db.tagStatusDao().insertSync(ts);
+            ts.trackId = (int) newId;
+            return ts;
+        }
+    }
+
+//    public TagStatus getLatestTagStatusForId(int tagId){
+//        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
+//        TagStatus ts;
+//        synchronized (tagLock){
+//            boolean needsInsert = false;
+//            ts = db.tagStatusDao().getTagStatusForTagId(tagId);
+//            if ( ts == null ){
+//                ts = createNewTagStatus(tagId);
+//                needsInsert = true;
+//            }
+//            ts.lastSeenMs = System.currentTimeMillis();
+//            ts.friendlyName = resolveFriendlyName(tagId);
+//            if ( needsInsert){
+//                long newId = db.tagStatusDao().insertSync(ts);
+//                ts.trackId = (int)newId;
+//            }
+//            return ts;
+//        }
+//    }
+    public List<TagStatus> getOpenPassesSync() {
+        return db.tagStatusDao().getOpenPassesSync();
     }
 
     private String resolveFriendlyName(int tagId) {
-        //Racer racer = db.racerDao().getSync(tagId);
-        //return (racer != null && racer.name != null && !racer.name.isEmpty()) ? racer.name : "";
         return String.format("PT-%d",tagId);
     }
 
+    // ===== Step-2: buffered TagData API =====
+    public void appendInMemoryTagData(TagData tagData) {
+        if (tagData == null) return;
+        final int trackId = tagData.trackId;
+        final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+        synchronized (tagLock) {
+            inMemoryTagDataBufferByTrack
+                    .computeIfAbsent(trackId, __ -> new ArrayList<>())
+                    .add(tagData);
+        }
+    }
 
+    public List<TagData> getHistoryForTrackIdSyncCombined(int trackId) {
+        List<TagData> persisted = db.tagDataDao().getSamplesForTrackIdSync(trackId);
+        if (persisted == null) persisted = Collections.emptyList();
+
+        List<TagData> copyBuffer = Collections.emptyList();
+        final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+        synchronized (tagLock) {
+            List<TagData> buf = inMemoryTagDataBufferByTrack.get(trackId);
+            if (buf != null && !buf.isEmpty()) copyBuffer = new ArrayList<>(buf);
+        }
+
+        if (copyBuffer.isEmpty()) return new ArrayList<>(persisted);
+        List<TagData> combined = new ArrayList<>(persisted.size() + copyBuffer.size());
+        combined.addAll(persisted);
+        combined.addAll(copyBuffer);
+        return combined;
+    }
+
+    public void clearInMemorySamplesForTrackId(int trackId) {
+        final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+        synchronized (tagLock) {
+            inMemoryTagDataBufferByTrack.remove(trackId);
+        }
+    }
+
+    public void restoreOpenPassBuffers(int maxPerTrack) {
+        if (maxPerTrack <= 0) return;
+        databaseWriteExecutor.execute(() -> {
+            try {
+                List<TagStatus> open = db.tagStatusDao().getOpenPassesSync();
+                if (open == null || open.isEmpty()) return;
+
+                for (TagStatus ts : open) {
+                    final int trackId = ts.trackId;
+                    List<TagData> all = db.tagDataDao().getSamplesForTrackIdSync(trackId);
+                    if (all == null || all.isEmpty()) continue;
+
+                    // take the last N in ascending time order
+                    int from = Math.max(0, all.size() - maxPerTrack);
+                    List<TagData> tail = new ArrayList<>(all.subList(from, all.size()));
+                    tail.sort(Comparator.comparingLong(td -> td.timestampMs));
+
+                    final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+                    synchronized (tagLock) {
+                        inMemoryTagDataBufferByTrack.put(trackId, new ArrayList<>(tail));
+                    }
+                }
+            } catch (Throwable t) {
+                // best-effort; no-op on failure
+                t.printStackTrace();
+            }
+        });
+    }
 
     public List<TagData> getSamplesForTrackIdSync(int trackId) {
-       return  db.tagDataDao().getSamplesForTrackIdSync(trackId);
+        return  db.tagDataDao().getSamplesForTrackIdSync(trackId);
     }
 
     public List<TagStatus> getAllActiveTagsSync(){
         return db.tagStatusDao().getAllActiveSync();
     }
 
-    // --- TagData ---
-    public LiveData<List<DebugTagData>> getLiveAllDebugTagData() {
-        return db.tagDataDao().liveGetAllDebugTagData();
-    }
-
-//    public LiveData<List<TagData>> getLiveAllTagDataDesc() {
-//        return db.tagDataDao().liveGetAllTagDataDesc();
-//    }
-//
-//    public LiveData<List<TagData>> getThrottledLiveAllTagDataDesc(long throttleMs) {
-//        return new ThrottledLiveData<>(db.tagDataDao().liveGetAllTagDataDesc(), throttleMs);
-//    }
-
     public void insertTagData(TagData tagData) {
         databaseWriteExecutor.execute(() -> db.tagDataDao().insert(tagData));
     }
 
-//    public LiveData<List<TagData>> getSamplesForTrackId(int trackId) {
-//        return db.tagDataDao().liveGetSamplesForTrackId(trackId);
-//    }
-//
-//    public LiveData<List<TagData>> getAllTagData() {
-//        return db.tagDataDao().liveGetAllTagData();
-//    }
-//
-//    public void getNewTagDataSamples(long sinceTimestamp, RepositoryCallback<List<TagData>> callback) {
-//        // Use the executor you already have for database writes
-//        databaseWriteExecutor.execute(() -> {
-//            try {
-//                // Call the synchronous DAO method on a background thread
-//                List<TagData> newSamples = db.tagDataDao().getNewSamplesSync(sinceTimestamp);
-//
-//                // Use a handler to post the result back to the main UI thread
-//                new Handler(Looper.getMainLooper()).post(() -> {
-//                    callback.onSuccess(newSamples);
-//                });
-//
-//            } catch (Exception e) {
-//                // If there's an error, post the error back to the main thread
-//                new Handler(Looper.getMainLooper()).post(() -> {
-//                    callback.onError(e);
-//                });
-//            }
-//        });
-//    }
+    // === RESTORED ===
+    public LiveData<List<DebugTagData>> getLiveAllDebugTagData() {
+        return db.tagDataDao().liveGetAllDebugTagData();
+    }
 
     public LiveData<DataCount> getTotalDataCount(){
         MediatorLiveData<DataCount> mediatorLiveData = new MediatorLiveData<>();
@@ -185,25 +289,13 @@ public final class Repository {
         });
 
         return mediatorLiveData;
-
     }
-//    public LiveData<Integer> getTotalSamplesCount() {
-//        return db.tagDataDao().getTotalSamplesCount();
-//    }
 
     public void deleteSamplesForTrackId(int trackId) {
         databaseWriteExecutor.execute(() -> db.tagDataDao().deleteSamplesForTrackIdSync(trackId));
     }
 
-    public AppDatabase getDatabase() {
-        return db;
-    }
-
-//    public void shutdownExecutor() {
-//        if (databaseWriteExecutor != null && !databaseWriteExecutor.isShutdown()) {
-//            databaseWriteExecutor.shutdown();
-//        }
-//    }
+    public AppDatabase getDatabase() { return db; }
 
     private void initializeDefaultSettingsInDbInternal() {
         Setting currentDbSetting = db.settingDao().getConfigSync(Setting.SETTINGS_ID);
@@ -229,28 +321,16 @@ public final class Repository {
         return db.tagStatusDao().liveAll();
     }
 
-//    public LiveData<List<TagStatus>> getThrottledAllTagStatuses(long throttleMs) {
-//        return new ThrottledLiveData<>(db.tagStatusDao().liveAll(), throttleMs);
-//    }
-//
-//    public LiveData<TagStatus> getTagStatusByTrackId(int trackId) {
-//        return db.tagStatusDao().liveGetByTrackId(trackId);
-//    }
-//
-//    public LiveData<TagStatus> getActiveTagStatusForTagId(int tagId) {
-//        return db.tagStatusDao().liveGetActiveStatusForTagId(tagId);
-//    }
-
     public void upsertTagStatus(TagStatus s, boolean deleteSamples, @Nullable RepositoryCallback<Long> callback) {
         databaseWriteExecutor.execute(() -> {
             try {
                 long rowId = db.tagStatusDao().upsertSync(s);
                 if ( s.state == TagStatus.TagStatusState.LOGGED){
                     if (deleteSamples) {
+                        clearInMemorySamplesForTrackId(s.trackId);
                         deleteSamplesForTrackId(s.trackId);
                     }
                 }
-
                 if (callback != null) mainThreadHandler.post(() -> callback.onSuccess(rowId));
             } catch (Exception e) {
                 if (callback != null) mainThreadHandler.post(() -> callback.onError(e));
@@ -262,18 +342,12 @@ public final class Repository {
         databaseWriteExecutor.execute(() -> db.racerDao().upsertAll(rs));
     }
 
-    public LiveData<Racer> getRacer(int id) {
-        return db.racerDao().liveGetById(id);
-    }
-
+    public LiveData<Racer> getRacer(int id) { return db.racerDao().liveGetById(id); }
     public LiveData<List<Racer>> getRacersForSplitAssignment(int splitAssignmentId) {
         return db.racerDao().liveGetBySplit(splitAssignmentId);
     }
 
-    public LiveData<RaceContext> getLiveRaceContext() {
-        return db.raceContextDao().liveLatest();
-    }
-
+    public LiveData<RaceContext> getLiveRaceContext() { return db.raceContextDao().liveLatest(); }
     public void upsertRaceContext(RaceContext c) {
         databaseWriteExecutor.execute(() -> db.raceContextDao().upsert(c));
     }
@@ -290,9 +364,7 @@ public final class Repository {
         databaseWriteExecutor.execute(() -> {
             try {
                 RaceContext ctx = db.raceContextDao().latestSync();
-                if (ctx == null) {
-                    ctx = makeTemporaryNewRace();
-                }
+                if (ctx == null) ctx = makeTemporaryNewRace();
                 ctx.gunTimeMs = gunTimeMs;
                 db.raceContextDao().upsert(ctx);
                 if (callback != null) mainThreadHandler.post(callback::onSuccess);
@@ -302,9 +374,7 @@ public final class Repository {
         });
     }
 
-    public void setGunTime(long gunTimeMs) {
-        setGunTime(gunTimeMs, null);
-    }
+    public void setGunTime(long gunTimeMs) { setGunTime(gunTimeMs, null); }
 
     public LiveData<Setting> getLiveConfig() {
         MediatorLiveData<Setting> mediatedLiveData = new MediatorLiveData<>();
@@ -339,20 +409,16 @@ public final class Repository {
         });
     }
 
-    //public void upsertConfig(Setting setting) {
-//        upsertConfig(setting, null);
-//    }
-
     public void clearAllData(boolean clearSettings,@Nullable RepositoryVoidCallback callback) {
         databaseWriteExecutor.execute(() -> {
             try {
+                inMemoryTagDataBufferByTrack.clear();
+                clearCalibrationBuffer();
                 if ( clearSettings){
                     db.clearAllTables();
-                }
-                else{
+                } else {
                     db.clearAllTablesExceptSettings();
                 }
-
                 checkAndInitializeDefaultSettingsInternal();
                 if (callback != null) mainThreadHandler.post(callback::onSuccess);
             } catch (Exception e) {
@@ -361,7 +427,154 @@ public final class Repository {
         });
     }
 
-//    public void clearAllData(boolean clearSettings) {
-//        clearAllData(clearSettings, null);
-//    }
+    // === Manual flush trigger (used by BleScannerService) ===
+    public void flushPendingSamplesNow() {
+        try {
+            flushAllTagDataBuffersInternal();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    // ===== Step-2 internals: periodic flush =====
+    private void flushAllTagDataBuffersInternal() {
+        if (!savingEnabled) return;
+        Map<Integer, List<TagData>> snap = snapshotInMemoryBuffers();
+        if (snap.isEmpty()) return;
+        databaseWriteExecutor.execute(() -> {
+            try {
+                flushSnapshotSync(snap);
+            } catch (Exception ex) {
+                // On failure, re-queue back into per-track buffer
+                for (Map.Entry<Integer, List<TagData>> e : snap.entrySet()) {
+                    final int trackId = e.getKey();
+                    final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+                    synchronized (tagLock) {
+                        inMemoryTagDataBufferByTrack
+                                .computeIfAbsent(trackId, __ -> new ArrayList<>())
+                                .addAll(e.getValue());
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== Step-5: calibration stream (mirror kept for compatibility) =====
+    public LiveData<List<RssiData>> getLiveCalibrationRssiMirror() { return calibrationLive; }
+
+    public void appendCalibrationSample(@NonNull RssiData s) {
+        synchronized (calibrationLock) {
+            if (calibrationBuffer.size() >= 2000) {
+                calibrationBuffer.subList(0, 500).clear();
+            }
+            calibrationBuffer.add(s);
+            calibrationLive.postValue(new ArrayList<>(calibrationBuffer));
+        }
+    }
+
+    public void clearCalibrationBuffer() {
+        synchronized (calibrationLock) {
+            calibrationBuffer.clear();
+            calibrationLive.postValue(new ArrayList<>());
+        }
+    }
+
+    // ===== NEW: helper to fetch the latest open pass (not LOGGED/TIMED_OUT) =====
+    public int getLatestOpenTrackIdForTag(int tagId) {
+        TagStatus ts = db.tagStatusDao().getTagStatusForTagId(tagId);
+        if (ts == null) return -1;
+        if (ts.state == TagStatus.TagStatusState.LOGGED || ts.state == TagStatus.TagStatusState.TIMED_OUT) return -1;
+        return ts.trackId;
+    }
+
+
+    // === NEW: snapshot + synchronous flush helpers ===
+    private Map<Integer, List<TagData>> snapshotInMemoryBuffers() {
+        final Map<Integer, List<TagData>> snapshot = new ConcurrentHashMap<>();
+        for (Map.Entry<Integer, List<TagData>> e : inMemoryTagDataBufferByTrack.entrySet()) {
+            final int trackId = e.getKey();
+            final Object tagLock = tagLockMap.computeIfAbsent(trackId, k -> new Object());
+            List<TagData> toFlush;
+            synchronized (tagLock) {
+                List<TagData> buf = inMemoryTagDataBufferByTrack.get(trackId);
+                if (buf == null || buf.isEmpty()) continue;
+                toFlush = new ArrayList<>(buf);
+                buf.clear();
+            }
+            snapshot.put(trackId, toFlush);
+        }
+        return snapshot;
+    }
+
+    private void flushSnapshotSync(Map<Integer, List<TagData>> snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) return;
+        // Optional: run in a transaction for speed/atomicity
+        db.runInTransaction(() -> {
+            for (Map.Entry<Integer, List<TagData>> e : snapshot.entrySet()) {
+                List<TagData> items = e.getValue();
+                if (items == null || items.isEmpty()) continue;
+                db.tagDataDao().insertAll(items);
+            }
+        });
+    }
+
+    /** Public: block this thread until all in-memory TagData are written to DB. */
+    public void flushPendingSamplesBlocking() {
+        if (!savingEnabled) return;
+        Map<Integer, List<TagData>> snap = snapshotInMemoryBuffers();
+        if (snap.isEmpty()) return;
+        flushSnapshotSync(snap);
+    }
+
+    /** Public: wait until all previously queued DB tasks have run. */
+    public void drainDb() {
+        final CountDownLatch latch = new CountDownLatch(1);
+        databaseWriteExecutor.execute(latch::countDown);
+        try {
+            // Don’t hang forever; 5s is plenty for our tiny queue.
+            latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    // ===== NEW: CSV export for a given track =====
+    public void exportTrackCsv(int trackId, @NonNull OutputStream output, @Nullable RepositoryVoidCallback callback) {
+        databaseWriteExecutor.execute(() -> {
+            Exception error = null;
+            try {
+                List<TagData> rows = db.tagDataDao().getSamplesForTrackIdSync(trackId);
+                // write header
+                output.write("timestampMs,trackId,tagId,rssi\n".getBytes(StandardCharsets.UTF_8));
+
+                int tagId = 0;
+                TagStatus status = db.tagStatusDao().getByTrackIdSync(trackId);
+                if (status != null) tagId = status.tagId;
+
+                if (rows != null) {
+                    StringBuilder sb = new StringBuilder(64 * Math.max(1, rows.size()));
+                    for (TagData td : rows) {
+                        sb.append(td.timestampMs).append(',')
+                                .append(trackId).append(',')
+                                .append(tagId).append(',')
+                                .append(td.rssi).append('\n');
+                    }
+                    output.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                output.flush();
+            } catch (Exception e) {
+                error = e;
+            } finally {
+                try { output.close(); } catch (Exception ignore) {}
+            }
+            if (callback != null) {
+                final Exception e2 = error;
+                mainThreadHandler.post(() -> {
+                    if (e2 == null) callback.onSuccess();
+                    else callback.onError(e2);
+                });
+            }
+        });
+    }
 }

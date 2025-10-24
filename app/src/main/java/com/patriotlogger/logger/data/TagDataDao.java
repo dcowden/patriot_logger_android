@@ -3,6 +3,7 @@ package com.patriotlogger.logger.data;
 import androidx.lifecycle.LiveData;
 import androidx.room.Dao;
 import androidx.room.Insert;
+import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
 
 import java.util.List;
@@ -19,6 +20,10 @@ public interface TagDataDao {
 
     @Insert
     void insert(TagData tagData);
+
+    // Batch insert (used by Repository.flushPendingSamplesNow)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    void insertAll(List<TagData> samples);
 
     @Query("DELETE FROM tag_data WHERE trackId = :trackId")
     void deleteSamplesForTrackIdSync(int trackId);

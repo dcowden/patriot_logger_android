@@ -29,13 +29,11 @@ import com.github.mikephil.charting.data.LineDataSet;
 import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.patriotlogger.logger.R;
-import com.patriotlogger.logger.data.CalibrationSample;
-import com.patriotlogger.logger.data.CalibrationTagDataBus;
 import com.patriotlogger.logger.data.Repository;
-import com.patriotlogger.logger.data.RepositoryCallback;
 import com.patriotlogger.logger.data.RepositoryVoidCallback;
 import com.patriotlogger.logger.data.Setting;
 import com.patriotlogger.logger.data.TagData;
+import com.patriotlogger.logger.logic.RssiData;
 import com.patriotlogger.logger.service.BleScannerService;
 
 import java.io.File;
@@ -45,7 +43,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-// ADDITIONS (match MainActivity’s approach; safe on existing perms)
+// ADDITIONS (match existing approach)
 import android.os.Build;
 import android.content.ContentValues;
 import android.provider.MediaStore;
@@ -65,10 +63,8 @@ public class SettingsActivity extends AppCompatActivity {
     private SwitchMaterial switchRetainSamples;
     private Slider sliderApproachingThreshold;
     private Slider sliderArrivedThreshold;
-    // private Slider sliderRssiAlpha;
     private TextView labelApproachingThreshold;
     private TextView labelArrivedThreshold;
-    // private TextView labelRssiAlpha;
     private Button buttonSaveChanges;
     private Button buttonStartCalibration, buttonHere, buttonArriving, buttonClearCalibration, buttonDownloadData;
     private LineChart chartCalibration;
@@ -78,7 +74,26 @@ public class SettingsActivity extends AppCompatActivity {
     private long calibrationStartTime = 0L;
 
     private float lastSmoothedRssi = 0.0f;
-    protected void processSamples( List<CalibrationSample> newSamples){
+
+    // Replace bus observer with repository-backed calibration RSSI
+    private final Observer<List<RssiData>> calibrationObserver = samples -> {
+        if (!isCalibrating) return;
+        if (samples == null || samples.isEmpty()) return;
+
+        // we only render the delta since lastSampleTimestamp to avoid re-drawing entire series
+        List<RssiData> pending = new ArrayList<>();
+        for (int i = samples.size() - 1; i >= 0; i--) {
+            RssiData s = samples.get(i);
+            if (s.timestampMs > lastSampleTimestamp) {
+                pending.add(0, s); // keep ascending time order
+            } else break;
+        }
+        if (!pending.isEmpty()) {
+            processSamples(pending);
+        }
+    };
+
+    protected void processSamples(List<RssiData> newSamples){
         if (isCalibrating && newSamples != null && !newSamples.isEmpty()) {
             long s = System.currentTimeMillis();
             Log.d("SettingsActivity", "Starring Chart Display");
@@ -88,7 +103,7 @@ public class SettingsActivity extends AppCompatActivity {
             lineData.setDrawValues(false);
             LineDataSet smoothedSet = (LineDataSet) lineData.getDataSetByIndex(1);
             LineDataSet rawSet = (LineDataSet) lineData.getDataSetByIndex(0);
-            for (CalibrationSample sample : newSamples) {
+            for (RssiData sample : newSamples) {
                 Log.d("SettingsActivity", "charting sample: " + sample);
 
                 float elapsedTimeInSeconds = (sample.timestampMs - calibrationStartTime) / 1000f;
@@ -106,7 +121,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             chartCalibration.setVisibleXRangeMaximum(GRAPH_MAX_SECS);
             chartCalibration.moveViewToX(smoothedSet.getXMax()); // Move to the newest entry's X value
-            CalibrationSample mostRecent = newSamples.get(0);
+            RssiData mostRecent = newSamples.get(newSamples.size()-1);
             float elapsedTimeInSeconds = (mostRecent.timestampMs - calibrationStartTime) / 1000f;
             if (elapsedTimeInSeconds > GRAPH_MAX_SECS) {
                 chartCalibration.getXAxis().setAxisMinimum(elapsedTimeInSeconds - GRAPH_MAX_SECS);
@@ -115,16 +130,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             Log.d("SettingsActivity", "Finished Starring Chart Display in " + (System.currentTimeMillis() - s));
         }
-
     }
-
-    private final Observer<List<CalibrationSample>> calibrationObserver = tagDataList -> {
-        if (!isCalibrating) return;
-        List<CalibrationSample> pending = CalibrationTagDataBus.consumeAll();
-        if (!pending.isEmpty()) {
-            processSamples(pending);
-        }
-    };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -137,10 +143,8 @@ public class SettingsActivity extends AppCompatActivity {
         switchRetainSamples = findViewById(R.id.switchRetainSamples);
         sliderApproachingThreshold = findViewById(R.id.sliderApproachingThreshold);
         sliderArrivedThreshold = findViewById(R.id.sliderArrivedThreshold);
-        // sliderRssiAlpha = findViewById(R.id.sliderRssiAlpha);
         labelApproachingThreshold = findViewById(R.id.labelApproachingThreshold);
         labelArrivedThreshold = findViewById(R.id.labelArrivedThreshold);
-        // labelRssiAlpha = findViewById(R.id.labelRssiAlpha);
         buttonSaveChanges = findViewById(R.id.buttonSaveChanges);
         buttonStartCalibration = findViewById(R.id.buttonStartCalibration);
         buttonHere = findViewById(R.id.buttonHere);
@@ -149,13 +153,13 @@ public class SettingsActivity extends AppCompatActivity {
         buttonDownloadData = findViewById(R.id.buttonDownloadCsv);
         chartCalibration = findViewById(R.id.chartCalibration);
 
-        CalibrationTagDataBus.getData().observe(this, calibrationObserver);
+        // Observe repository calibration stream instead of the old bus
+        repository.getLiveCalibrationRssi().observe(this, calibrationObserver);
 
         setupButtons();
         setupSliderListeners();
         setupChart();
         loadAndObserveSettings();
-
     }
 
     @Override
@@ -183,26 +187,12 @@ public class SettingsActivity extends AppCompatActivity {
         sliderArrivedThreshold.addOnChangeListener((slider, value, fromUser) -> {
             labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%.0f)", value));
         });
-
-        // sliderRssiAlpha.addOnChangeListener((slider, value, fromUser) -> {
-        //     labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", value));
-        // });
     }
 
-
     private void setupChart() {
-        // --- THEME-AWARE COLOR SETUP ---
-        // 1. Resolve the correct colors from the current theme (light or dark).
-
-        // For axes and labels, use the standard Android attribute for primary text color.
-        // This is guaranteed to be readable on the default window background.
         int axisColor = getThemeColor(android.R.attr.textColorPrimary);
-
-        // For the data line and circles, use the theme's primary accent color.
-        // This is typically light in dark mode and dark in light mode.
         int dataSetColor = getThemeColor(androidx.appcompat.R.attr.colorPrimary);
 
-        // --- GENERAL CHART SETUP ---
         chartCalibration.getDescription().setEnabled(true);
         chartCalibration.getDescription().setText("RSSI over Time");
         chartCalibration.getDescription().setTextColor(axisColor);
@@ -212,34 +202,30 @@ public class SettingsActivity extends AppCompatActivity {
         chartCalibration.setDrawGridBackground(false);
         chartCalibration.getLegend().setTextColor(axisColor);
 
-        // --- Y-AXIS (LEFT) SETUP ---
         YAxis leftAxis = chartCalibration.getAxisLeft();
         leftAxis.setAxisMaximum(-25f);
         leftAxis.setAxisMinimum(-100f);
-        leftAxis.setTextColor(axisColor); // Use theme color for labels
-        leftAxis.setGridColor(axisColor); // Use theme color for grid lines
-        leftAxis.setAxisLineColor(axisColor); // Use theme color for the axis line itself
+        leftAxis.setTextColor(axisColor);
+        leftAxis.setGridColor(axisColor);
+        leftAxis.setAxisLineColor(axisColor);
 
-        // --- Y-AXIS (RIGHT) SETUP ---
         chartCalibration.getAxisRight().setEnabled(false);
 
-        // --- X-AXIS (BOTTOM) SETUP ---
         XAxis xAxis = chartCalibration.getXAxis();
-        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM); // Ensure X-axis is at the bottom
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
         xAxis.setAxisMinimum(0f);
         xAxis.setAxisMaximum(GRAPH_MAX_SECS);
-        xAxis.setTextColor(axisColor); // Use theme color for labels
-        xAxis.setGridColor(axisColor); // Use theme color for grid lines
-        xAxis.setAxisLineColor(axisColor); // Use theme color for the axis line itself
+        xAxis.setTextColor(axisColor);
+        xAxis.setGridColor(axisColor);
+        xAxis.setAxisLineColor(axisColor);
 
         clearChart();
     }
 
     private int getThemeColor(@AttrRes int colorAttr) {
-        // 'this' refers to the Activity context
         TypedArray ta = this.getTheme().obtainStyledAttributes(new int[]{colorAttr});
-        int color = ta.getColor(0, Color.BLACK); // Default to black if not found
-        ta.recycle(); // Always recycle TypedArray
+        int color = ta.getColor(0, Color.BLACK);
+        ta.recycle();
         return color;
     }
 
@@ -254,15 +240,12 @@ public class SettingsActivity extends AppCompatActivity {
         });
     }
 
-
     private void updateUiWithSettings(Setting setting) {
         switchRetainSamples.setChecked(setting.retain_samples);
         sliderApproachingThreshold.setValue(setting.approaching_threshold.floatValue());
         sliderArrivedThreshold.setValue(setting.arrived_threshold.floatValue());
-        // sliderRssiAlpha.setValue(setting.rssi_averaging_alpha);
         labelApproachingThreshold.setText(String.format(Locale.US, "Approaching Threshold (%d)", setting.approaching_threshold));
         labelArrivedThreshold.setText(String.format(Locale.US, "Arrival Threshold (%d)", setting.arrived_threshold));
-        // labelRssiAlpha.setText(String.format(Locale.US, "RSSI Averaging Alpha (%.2f)", setting.rssi_averaging_alpha));
     }
 
     private void saveSettings() {
@@ -274,7 +257,6 @@ public class SettingsActivity extends AppCompatActivity {
         currentSettings.retain_samples = switchRetainSamples.isChecked();
         currentSettings.approaching_threshold = (int) sliderApproachingThreshold.getValue();
         currentSettings.arrived_threshold = (int) sliderArrivedThreshold.getValue();
-        // currentSettings.rssi_averaging_alpha = sliderRssiAlpha.getValue();
 
         buttonSaveChanges.setEnabled(false);
         repository.upsertConfig(currentSettings, new RepositoryVoidCallback() {
@@ -304,12 +286,12 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void startCalibration() {
         isCalibrating = true;
-        repository.setSavingEnabled(false);
+        repository.setSavingEnabled(false);                // don’t persist; publish to calibration stream
+        repository.clearCalibrationRssi();                 // clear stream buffer
         buttonStartCalibration.setText("Stop");
         clearChart();
         calibrationStartTime = System.currentTimeMillis();
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_START));
-        //calibrationHandler.post(fetchNewSamplesRunnable);
     }
 
     private void stopCalibration() {
@@ -317,11 +299,10 @@ public class SettingsActivity extends AppCompatActivity {
         repository.setSavingEnabled(true);
         buttonStartCalibration.setText("Start");
         startService(new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_STOP));
-        //calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
 
     private void clearChart() {
-        LineData lineData = new LineData(createRawDataSet(),createSmoothedDataSet() );
+        LineData lineData = new LineData(createRawDataSet(), createSmoothedDataSet());
         chartCalibration.setData(lineData);
         chartCalibration.invalidate();
         calibrationStartTime = System.currentTimeMillis();
@@ -349,7 +330,6 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void setSliderFromLastRssi(Slider slider) {
-
         int roundedRssi = Math.round(lastSmoothedRssi);
         Log.w(TAG_ACTIVITY, "Setting Slider lastRssi = " + roundedRssi);
         if (isCalibrating && roundedRssi != 0) {
@@ -372,7 +352,6 @@ public class SettingsActivity extends AppCompatActivity {
             return;
         }
 
-        // Build CSV content (timestamp,tagid,rssi,smoothedrssi)
         StringBuilder sb = new StringBuilder(32 * smoothedSet.getEntryCount());
         sb.append("timestamp,tagid,rssi,smoothedrssi\n");
 
@@ -400,7 +379,6 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
-    // Same storage strategy as MainActivity (no FileProvider needed)
     private boolean saveCsvToDownloads(String fileName, String fileContent) {
         boolean success = false;
         try {
@@ -438,8 +416,5 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Prevent memory leaks by removing any pending runnables
-        //calibrationHandler.removeCallbacks(fetchNewSamplesRunnable);
     }
-
 }

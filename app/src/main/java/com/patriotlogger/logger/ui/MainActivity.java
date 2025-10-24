@@ -243,10 +243,24 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private void onActionButtonClicked() {
         if (isScanningActive) {
             stopBleService();
+            quiesceAndDrainThenExport();
             onDownloadCsvClicked();
         } else {
             ensureScanningIfReady();
         }
+    }
+
+    private void quiesceAndDrainThenExport() {
+        android.os.ResultReceiver rr = new android.os.ResultReceiver(new Handler(Looper.getMainLooper())) {
+            @Override protected void onReceiveResult(int resultCode, Bundle resultData) {
+                // Service worker is idle and DB is flushed. Safe to export.
+                onDownloadCsvClicked();
+            }
+        };
+        Intent i = new Intent(this, BleScannerService.class).setAction(BleScannerService.ACTION_QUIESCE_AND_DRAIN);
+        i.putExtra(BleScannerService.EXTRA_RESULT_RECEIVER, rr);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+        else startService(i);
     }
 
     private void stopBleService() {
@@ -335,6 +349,10 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         }
 
         executorService.execute(() -> {
+
+            repository.flushPendingSamplesBlocking(); // write buffers to DB now
+            repository.drainDb();
+
             AppDatabase db = repository.getDatabase();
             List<TagStatus> tagStatuses = db.tagStatusDao().getAllSync();
             List<TagData> allTagData = db.tagDataDao().getAllTagDataSync();

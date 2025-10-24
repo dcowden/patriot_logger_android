@@ -1,6 +1,6 @@
 package com.patriotlogger.logger.test;
 
-import com.patriotlogger.logger.data.CalibrationSample;
+import com.patriotlogger.logger.logic.RssiData;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -21,8 +21,8 @@ public class DataParser {
         return out;
     }
 
-    public static List<CalibrationSample> readSamples(File csv) throws Exception {
-        List<CalibrationSample> out = new ArrayList<>();
+    public static List<RssiData> readSamples(File csv) throws Exception {
+        List<RssiData> out = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new FileReader(csv))) {
             String line;
             boolean first = true;
@@ -45,7 +45,9 @@ public class DataParser {
                 // clip obvious outliers (keep it sane for RSSI)
                 if (rssi > 0 || rssi < -127) continue;
 
-                out.add(new CalibrationSample(tagId, ts, rssi, smoothed));
+                RssiData d = new RssiData(tagId,ts,rssi,0);
+
+                out.add(d);
             }
         }
         return out;

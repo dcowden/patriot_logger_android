@@ -78,8 +78,8 @@ public class CsvExporter {
             csvBuilder.append(status.state != null ? status.state.name() : "").append(",");
             csvBuilder.append(status.entryTimeMs).append(",");
             csvBuilder.append(status.peakTimeMs).append(",");
-            csvBuilder.append(status.exitTimeMs).append(",");
-            csvBuilder.append(status.peakRssi).append("\n");
+            csvBuilder.append(status.exitTimeMs).append("\n");
+
         }
         return csvBuilder.toString();
     }
