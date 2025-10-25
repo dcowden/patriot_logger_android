@@ -18,4 +18,9 @@ package com.patriotlogger.logger.logic;
         this.peakTimeMs = peakTimeMs;
         this.peakRssi = peakRssi;
     }
+
+    @Override
+    public String toString(){
+        return "TagPeakData{peakTimeMs=" + peakTimeMs + ", peakRssi=" + peakRssi + "}";
+    }
 }

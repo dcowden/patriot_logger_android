@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 10,
-    "identityHash": "39b366439871f734e3066852f9b31071",
+    "identityHash": "945c9feeb3f6741761e2fd56fe5bcf74",
     "entities": [
       {
         "tableName": "tag_status",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `arrivedTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tagId` INTEGER NOT NULL, `friendlyName` TEXT, `entryTimeMs` INTEGER NOT NULL, `arrivedTimeMs` INTEGER NOT NULL, `peakTimeMs` INTEGER NOT NULL, `exitTimeMs` INTEGER NOT NULL, `peakRssi` REAL NOT NULL, `state` TEXT NOT NULL, `lastSeenMs` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -47,6 +47,12 @@
             "fieldPath": "exitTimeMs",
             "columnName": "exitTimeMs",
             "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakRssi",
+            "columnName": "peakRssi",
+            "affinity": "REAL",
             "notNull": true
           },
           {
@@ -345,7 +351,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '39b366439871f734e3066852f9b31071')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '945c9feeb3f6741761e2fd56fe5bcf74')"
     ]
   }
 }

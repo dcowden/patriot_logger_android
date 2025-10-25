@@ -6,6 +6,7 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MediatorLiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -35,6 +36,10 @@ public final class Repository {
     private final ExecutorService databaseWriteExecutor;
     private final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
 
+    // --- START: MODIFICATIONS FOR TESTABILITY ---
+    private final boolean isTestInstance;
+    // --- END: MODIFICATIONS FOR TESTABILITY ---
+
     private final Map<Integer, Object> tagLockMap = new ConcurrentHashMap<>();
 
     private final MutableLiveData<Boolean> areSettingsInitialized = new MutableLiveData<>(false);
@@ -47,6 +52,9 @@ public final class Repository {
 
     private final Runnable periodicFlushRunnable = new Runnable() {
         @Override public void run() {
+            // --- MODIFICATION: Do not run the periodic flusher for test instances ---
+            if (isTestInstance) return;
+
             try { flushAllTagDataBuffersInternal(); }
             finally { mainThreadHandler.postDelayed(this, tagDataFlushIntervalMs); }
         }
@@ -57,6 +65,74 @@ public final class Repository {
     private final ArrayList<RssiData> calibrationBuffer = new ArrayList<>(512);
     private final MutableLiveData<List<RssiData>> calibrationLive = new MutableLiveData<>(new ArrayList<>());
 
+    // --- START: REFACTORED CONSTRUCTORS ---
+
+    private Repository(@NonNull AppDatabase database,
+                       boolean forTest,
+                       @NonNull ExecutorService executor) {
+        this.db = database;
+        this.isTestInstance = forTest;
+        this.databaseWriteExecutor = executor;
+
+        // Kick off periodic flushing (prod only)
+        if (!isTestInstance) {
+            mainThreadHandler.postDelayed(periodicFlushRunnable, tagDataFlushIntervalMs);
+        }
+
+        // Defer "onCreate/onOpen" style work until after fields are initialized
+        databaseWriteExecutor.execute(() -> {
+            try {
+                // If you need “onCreate” vs “onOpen” branching, add your own sentinel in the DB.
+                initializeDefaultSettingsInDbInternal();
+                checkAndInitializeDefaultSettingsInternal();
+            } catch (Throwable t) {
+                // log but don't crash app/tests
+                android.util.Log.e(TAG, "Startup init failed", t);
+            }
+        });
+    }
+
+    @VisibleForTesting
+    public static Repository createForTest(@NonNull AppDatabase database) {
+        return new Repository(database, /*forTest=*/true, Executors.newSingleThreadExecutor());
+    }
+
+    /**
+     * Convenience for tests that just want a ready in-memory instance.
+     */
+    @VisibleForTesting
+    public static Repository createInMemoryForTest(@NonNull Context ctx) {
+        AppDatabase db = Room.inMemoryDatabaseBuilder(ctx.getApplicationContext(), AppDatabase.class)
+                .allowMainThreadQueries() // optional; useful in unit tests
+                .build();
+        return new Repository(db, /*forTest=*/true, Executors.newSingleThreadExecutor());
+    }
+
+
+    // ---------- PROD SINGLETON FACTORY ----------
+    public static Repository get(@NonNull Context context) {
+        Repository local = instance;
+        if (local != null) return local;
+        synchronized (Repository.class) {
+            if (instance == null) {
+                // Build the real (file-backed) DB WITHOUT referencing 'this' in callbacks.
+                AppDatabase db = Room.databaseBuilder(
+                                context.getApplicationContext(),
+                                AppDatabase.class,
+                                "psl.db")
+                        .fallbackToDestructiveMigration()
+                        .build();
+
+                ExecutorService exec = Executors.newSingleThreadExecutor();
+                instance = new Repository(db, /*forTest=*/false, exec);
+            }
+            return instance;
+        }
+    }
+
+
+    // --- END: REFACTORED CONSTRUCTORS ---
+
     public boolean isSavingEnabled(){ return savingEnabled; }
     public void setSavingEnabled(boolean newValue){ this.savingEnabled = newValue; }
 
@@ -65,33 +141,6 @@ public final class Repository {
         this.tagDataFlushIntervalMs = intervalMs;
     }
 
-    private Repository(Context ctx) {
-        databaseWriteExecutor = Executors.newSingleThreadExecutor();
-        db = Room.databaseBuilder(ctx.getApplicationContext(), AppDatabase.class, "psl.db")
-                .fallbackToDestructiveMigration()
-                .addCallback(new RoomDatabase.Callback() {
-                    @Override public void onCreate(@NonNull SupportSQLiteDatabase _db) {
-                        databaseWriteExecutor.execute(Repository.this::initializeDefaultSettingsInDbInternal);
-                    }
-                    @Override public void onOpen(@NonNull SupportSQLiteDatabase _db) {
-                        databaseWriteExecutor.execute(Repository.this::checkAndInitializeDefaultSettingsInternal);
-                    }
-                })
-                .build();
-
-        mainThreadHandler.postDelayed(periodicFlushRunnable, tagDataFlushIntervalMs);
-    }
-
-    public static Repository get(@NonNull Context context) {
-        if (instance == null) {
-            synchronized (Repository.class) {
-                if (instance == null) instance = new Repository(context.getApplicationContext());
-            }
-        }
-        return instance;
-    }
-
-    // ===== TagStatus helpers =====
     private TagStatus createNewTagStatus(int tagId){
         TagStatus newStatus = new TagStatus();
         newStatus.tagId = tagId;
@@ -159,7 +208,7 @@ public final class Repository {
         }
     }
 
-//    public TagStatus getLatestTagStatusForId(int tagId){
+    //    public TagStatus getLatestTagStatusForId(int tagId){
 //        Object tagLock = tagLockMap.computeIfAbsent(tagId, k -> new Object());
 //        TagStatus ts;
 //        synchronized (tagLock){
@@ -576,5 +625,17 @@ public final class Repository {
                 });
             }
         });
+    }
+
+    // --- ADD THIS HELPER METHOD FOR YOUR TEST ---
+    /**
+     * Resets the in-memory state of the repository. Useful for isolating test cases.
+     */
+    @VisibleForTesting
+    public void resetStateForTest() {
+        tagLockMap.clear();
+        inMemoryTagDataBufferByTrack.clear();
+        calibrationBuffer.clear();
+        // Clear any other non-database state here if needed
     }
 }

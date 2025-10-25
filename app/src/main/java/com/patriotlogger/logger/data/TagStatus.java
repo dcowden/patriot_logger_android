@@ -33,6 +33,7 @@ public class TagStatus {
     public long arrivedTimeMs = 0L;
     public long peakTimeMs = 0L;
     public long exitTimeMs = 0L;
+    public float peakRssi = 0.0f;
 
     @NonNull
     public TagStatusState state = TagStatusState.FIRST_SAMPLE;
@@ -50,6 +51,7 @@ public class TagStatus {
                 ", entryTimeMs=" + entryTimeMs +
                 ", arrivedTimeMs=" + arrivedTimeMs +
                 ", peakTimeMs=" + peakTimeMs +
+                ", peakRssi=" + peakRssi +
                 ", exitTimeMs=" + exitTimeMs +
                 ", state=" + state +
                 ", lastSeenMs=" + lastSeenMs +

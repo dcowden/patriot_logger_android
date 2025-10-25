@@ -75,6 +75,7 @@ public class TcaWithFallbackHandler implements RssiHandler {
         this.windowSize = Math.max(6, windowSize);
         this.minPoints = Math.max(5, Math.min(this.windowSize - 2, minPoints));
         this.approachMeters = (approachMeters > 0) ? approachMeters : 15.0;
+
     }
 
     @Override

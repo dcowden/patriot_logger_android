@@ -39,6 +39,7 @@ import com.patriotlogger.logger.data.TagStatus;
 import com.patriotlogger.logger.data.TagStatus.TagStatusState;
 import com.patriotlogger.logger.logic.RssiSmoother;
 
+import com.patriotlogger.logger.logic.SampleProcessor;
 import com.patriotlogger.logger.logic.filters.RssiFilter;
 import com.patriotlogger.logger.logic.filters.MinMaxRssiFilter;
 import com.patriotlogger.logger.logic.RssiHandler;
@@ -88,61 +89,71 @@ public class BleScannerService extends Service {
     private final Map<Integer, Long> lastRadioNs   = new ConcurrentHashMap<>();
     private final Map<Integer, Long> lastDeliverNs = new ConcurrentHashMap<>();
 
+    private SampleProcessor processor;
     // Filters
     private final List<RssiFilter> filters = new ArrayList<>();
 
     // Per-track handlers
     private final Map<Integer, RssiHandler> handlerByTrack = new ConcurrentHashMap<>();
 
-    private RssiHandler newTcaHandler() {
-        // Use latest settings (with sane defaults if null)
-        float  alpha        = currentSettings.tca_alpha != null ? currentSettings.tca_alpha : Setting.DEFAULT_TCA_ALPHA;
-        double txAt1mDbm    = currentSettings.tx_power_at_1m_dbm != null ? currentSettings.tx_power_at_1m_dbm : Setting.DEFAULT_TX_POWER_AT_1M_DBM;
-        double pathExp      = currentSettings.path_loss_n != null ? currentSettings.path_loss_n : Setting.DEFAULT_PATH_LOSS_N;
-        double hereMeters   = currentSettings.tca_here_meters != null ? currentSettings.tca_here_meters : Setting.DEFAULT_TCA_HERE_METERS;
-        double thresholdSec = currentSettings.tca_threshold_sec != null ? currentSettings.tca_threshold_sec : Setting.DEFAULT_TCA_THRESHOLD_SEC;
-        int    windowSize   = currentSettings.tca_window_size != null ? currentSettings.tca_window_size : Setting.DEFAULT_TCA_WINDOW_SIZE;
-        int    minPoints    = currentSettings.tca_min_points != null ? currentSettings.tca_min_points : Setting.DEFAULT_TCA_MIN_POINTS;
-        double approachM    = currentSettings.tca_approach_meters != null ? currentSettings.tca_approach_meters : Setting.DEFAULT_TCA_APPROACH_METERS;
+//    private RssiHandler newTcaHandler() {
+//        // Use latest settings (with sane defaults if null)
+//        float  alpha        = currentSettings.tca_alpha != null ? currentSettings.tca_alpha : Setting.DEFAULT_TCA_ALPHA;
+//        double txAt1mDbm    = currentSettings.tx_power_at_1m_dbm != null ? currentSettings.tx_power_at_1m_dbm : Setting.DEFAULT_TX_POWER_AT_1M_DBM;
+//        double pathExp      = currentSettings.path_loss_n != null ? currentSettings.path_loss_n : Setting.DEFAULT_PATH_LOSS_N;
+//        double hereMeters   = currentSettings.tca_here_meters != null ? currentSettings.tca_here_meters : Setting.DEFAULT_TCA_HERE_METERS;
+//        double thresholdSec = currentSettings.tca_threshold_sec != null ? currentSettings.tca_threshold_sec : Setting.DEFAULT_TCA_THRESHOLD_SEC;
+//        int    windowSize   = currentSettings.tca_window_size != null ? currentSettings.tca_window_size : Setting.DEFAULT_TCA_WINDOW_SIZE;
+//        int    minPoints    = currentSettings.tca_min_points != null ? currentSettings.tca_min_points : Setting.DEFAULT_TCA_MIN_POINTS;
+//        double approachM    = currentSettings.tca_approach_meters != null ? currentSettings.tca_approach_meters : Setting.DEFAULT_TCA_APPROACH_METERS;
+//
+//        return new TcaWithFallbackHandler(
+//                alpha,
+//                txAt1mDbm,
+//                pathExp,
+//                hereMeters,
+//                thresholdSec,
+//                windowSize,
+//                minPoints,
+//                approachM
+//        );
+//    }
 
-        return new TcaWithFallbackHandler(
-                alpha,
-                txAt1mDbm,
-                pathExp,
-                hereMeters,
-                thresholdSec,
-                windowSize,
-                minPoints,
-                approachM
-        );
-    }
+//    private void rebuildFiltersFromSettings(Setting s) {
+//        int min = (s.filter_min_rssi != null) ? s.filter_min_rssi : Setting.DEFAULT_FILTER_MIN_RSSI;
+//        int max = (s.filter_max_rssi != null) ? s.filter_max_rssi : Setting.DEFAULT_FILTER_MAX_RSSI;
+//        synchronized (filters) {
+//            filters.clear();
+//            filters.add(new MinMaxRssiFilter(min, max));
+//        }
+//    }
 
-    private void rebuildFiltersFromSettings(Setting s) {
-        int min = (s.filter_min_rssi != null) ? s.filter_min_rssi : Setting.DEFAULT_FILTER_MIN_RSSI;
-        int max = (s.filter_max_rssi != null) ? s.filter_max_rssi : Setting.DEFAULT_FILTER_MAX_RSSI;
-        synchronized (filters) {
-            filters.clear();
-            filters.add(new MinMaxRssiFilter(min, max));
-        }
-    }
-
+//    private void applyRuntimeCadencesFromSettings(Setting s) {
+//        // Abandoned timeout & sweep cadence for this service
+//        if (s.abandoned_timeout_ms != null) abandonedTagTimeoutMs = s.abandoned_timeout_ms;
+//        if (s.sweep_interval_ms != null) sweepIntervalMs = s.sweep_interval_ms;
+//
+//        // Repository flush cadence
+//        if (s.tagdata_flush_ms != null) {
+//            repository.setTagDataFlushIntervalMs(s.tagdata_flush_ms);
+//        }
+//
+//        // Reschedule sweep using the new cadence
+//        if (worker != null) {
+//            worker.removeCallbacks(this::performSweepRunnable);
+//            worker.postDelayed(this::performSweepRunnable, sweepIntervalMs);
+//        }
+//    }
     private void applyRuntimeCadencesFromSettings(Setting s) {
-        // Abandoned timeout & sweep cadence for this service
         if (s.abandoned_timeout_ms != null) abandonedTagTimeoutMs = s.abandoned_timeout_ms;
-        if (s.sweep_interval_ms != null) sweepIntervalMs = s.sweep_interval_ms;
+        if (s.sweep_interval_ms != null)    sweepIntervalMs      = s.sweep_interval_ms;
+        if (s.tagdata_flush_ms != null)     repository.setTagDataFlushIntervalMs(s.tagdata_flush_ms);
 
-        // Repository flush cadence
-        if (s.tagdata_flush_ms != null) {
-            repository.setTagDataFlushIntervalMs(s.tagdata_flush_ms);
-        }
-
-        // Reschedule sweep using the new cadence
         if (worker != null) {
             worker.removeCallbacks(this::performSweepRunnable);
             worker.postDelayed(this::performSweepRunnable, sweepIntervalMs);
         }
     }
-
     @Override
     public void onCreate() {
         super.onCreate();
@@ -152,35 +163,24 @@ public class BleScannerService extends Service {
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
 
-        // Start with conservative default filter; will be rebuilt when settings arrive
-        rebuildFiltersFromSettings(currentSettings);
+        // NEW: single shared pipeline
+        processor = new SampleProcessor(repository, SampleProcessor.newTcaHandler(currentSettings),currentSettings);
 
-        settingsObserver = setting -> {
-            if (setting != null) {
-                this.currentSettings = setting;
-                rebuildFiltersFromSettings(setting);
-                applyRuntimeCadencesFromSettings(setting);
-
-                // Ensure new handler instances pick up new settings
-                handlerByTrack.clear();
-
-                Log.d(TAG_SERVICE, "Settings applied to scanner/handler/filters");
-            }
-        };
+//        settingsObserver = setting -> {
+//            if (setting != null) {
+//                this.currentSettings = setting;
+//                processor.applySettings(setting);
+//                Log.d(TAG_SERVICE, "Settings applied to pipeline");
+//            }
+//        };
         new Handler(Looper.getMainLooper()).post(() ->
                 repository.getLiveConfig().observeForever(settingsObserver)
         );
 
-        // Warm seed handlers + buffers for open passes
+        // Warm seed handlers + buffers
         worker.post(() -> {
-            try {
-                handlerByTrack.clear();
-                List<TagStatus> open = repository.getOpenPassesSync(); // safe here: not main thread
-                for (TagStatus ts : open) handlerByTrack.put(ts.trackId, newTcaHandler());
-                repository.restoreOpenPassBuffers(120);
-            } catch (Throwable t) {
-                Log.w(TAG_SERVICE, "Warm-start seeding failed", t);
-            }
+            try { processor.seedFromOpenPasses(); }
+            catch (Throwable t) { Log.w(TAG_SERVICE, "Warm-start seeding failed", t); }
         });
 
         createChannel();
@@ -352,47 +352,9 @@ public class BleScannerService extends Service {
         long nowMs = System.currentTimeMillis();
         Log.i(TAG_SERVICE, "Received scan result for tagId: " + tagId + " RSSI: " + rssi);
 
-        // (filters)
-        List<RssiFilter> currentFilters;
-        synchronized (filters) { currentFilters = new ArrayList<>(filters); }
-        for (RssiFilter f : currentFilters) {
-            if (!f.shouldAccept(nowMs, rssi)) return;
-        }
+        // (keep your timing logs above this call, unchanged)
 
-        // Build RssiData (smoothed only for UI; TCA does its own EMA)
-        float smoothed = rssiSmoother.getSmoothedRssi(rssi, currentSettings);
-        RssiData rssiData = new RssiData(tagId, nowMs, rssi, (int) smoothed);
-
-        if (!repository.isSavingEnabled()) {
-            // Calibration mode: do not persist; publish to repo stream
-            repository.appendCalibrationSample(rssiData);
-            return;
-        }
-
-        // Persisting mode
-        //TagStatus latestStatus = repository.getLatestTagStatusForId(tagId);
-        TagStatus latestStatus = repository.getOrCreateActiveStatus(tagId);
-        int trackId = latestStatus.trackId;
-
-        // history (persisted + in-mem tail)
-        List<TagData> history = repository.getHistoryForTrackIdSyncCombined(trackId);
-
-        // also buffer new sample for periodic flush
-        repository.appendInMemoryTagData(new TagData(trackId, nowMs, rssi));
-
-        // per-track handler (constructed from current settings)
-        RssiHandler handler = handlerByTrack.computeIfAbsent(trackId, k -> newTcaHandler());
-
-        TagStatus processedStatus = handler.acceptSample(latestStatus, history, rssiData);
-
-        repository.upsertTagStatus(processedStatus, !currentSettings.retain_samples, null);
-
-        // prune handler on terminal states
-        if (processedStatus.state == TagStatusState.LOGGED ||
-                processedStatus.state == TagStatusState.TIMED_OUT) {
-            handlerByTrack.remove(processedStatus.trackId);
-        }
-
+        TagStatus processedStatus = processor.processSample(tagId, rssi, nowMs);
         handleUIUpdates(processedStatus, nowMs);
     }
 
@@ -416,21 +378,8 @@ public class BleScannerService extends Service {
 
     private void performSweepRunnable() {
         long now = System.currentTimeMillis();
-        List<TagStatus> activeStatuses = repository.getAllActiveTagsSync();
-
-        for (TagStatus status : activeStatuses) {
-            long msSinceLastSeen = now - status.lastSeenMs;
-
-            if (status.state == TagStatusState.HERE && (msSinceLastSeen > abandonedTagTimeoutMs)) {
-                Log.w(TAG_SERVICE, "Tag " + status.tagId + " abandoned while HERE. Timing out.");
-                TagStatus newStatus = status;
-                newStatus.state = TagStatusState.TIMED_OUT;
-                newStatus.exitTimeMs = now;
-                repository.upsertTagStatus(newStatus, !currentSettings.retain_samples, null);
-                // prune handler on terminal
-                handlerByTrack.remove(newStatus.trackId);
-                handleUIUpdates(newStatus, now);
-            }
+        for (TagStatus s : processor.sweepForTimeouts(abandonedTagTimeoutMs, now)) {
+            handleUIUpdates(s, now);
         }
         Log.d(TAG_SERVICE, "Performing sweep END");
         worker.postDelayed(this::performSweepRunnable, sweepIntervalMs);

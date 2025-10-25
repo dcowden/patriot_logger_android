@@ -18,6 +18,10 @@ public interface RssiHandler {
      */
     TagStatus acceptSample(TagStatus currentStatus, List<TagData> history, RssiData sample);
 
+    default TagStatus timeOut ( TagStatus currentStatus, long nowMs){
+        return currentStatus;
+    }
+
     /** Human-friendly name for reporting (defaults to simple class name). */
     default String getName() { return this.getClass().getSimpleName(); }
 }
